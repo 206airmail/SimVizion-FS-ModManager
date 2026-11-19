@@ -5,6 +5,7 @@ import type { GameStatus } from './types/GameStatus';
 import type { ModEntry } from './types/ModEntry';
 import type { Profile } from './types/Profile';
 import type { ScanProgress } from './types/ScanProgress';
+import type { SwitchResult } from './types/SwitchResult';
 
 export type { ApiError } from './types/ApiError';
 export type { Dependency } from './types/Dependency';
@@ -20,6 +21,7 @@ export type { Profile } from './types/Profile';
 export type { ScanProgress } from './types/ScanProgress';
 export type { ScanSummary } from './types/ScanSummary';
 export type { Severity } from './types/Severity';
+export type { SwitchResult } from './types/SwitchResult';
 export type { UpdateState } from './types/UpdateState';
 
 /**
@@ -40,4 +42,15 @@ export interface Api {
   openProfileFolder(profileId: string): Promise<void>;
   /** Opens Explorer with the mod's file or folder selected. */
   showModInFolder(profileId: string, modId: string): Promise<void>;
+  /**
+   * Makes the profile the folder the game loads (edits `modsDirectoryOverride` in
+   * gameSettings.xml after a backup). Refused while the game or the dedicated server runs.
+   */
+  setActiveProfile(profileId: string): Promise<SwitchResult>;
+  /** Reverses the switch `opId` if it is the latest write and the file still holds it. */
+  undoSwitch(opId: string): Promise<SwitchResult>;
+  /** ISO time of the newest gameSettings.xml backup, or null when there is none. */
+  latestSettingsBackup(): Promise<string | null>;
+  /** Replaces an unreadable gameSettings.xml with the newest backup. */
+  restoreSettingsBackup(): Promise<void>;
 }

@@ -77,3 +77,15 @@ Why: `ModEntry.icon` is `http://thumb.localhost/<profile>/<mod>?v=<size>-<mtime>
 ## 2026-11-18: Dependencies and the core are optimised in dev builds
 
 Why: unoptimised zip inflate, DDS decoding and resizing made first-time thumbnails average about 610 ms each in `tauri dev` (34 ms once optimised; cache hits 0.6 ms). `[profile.dev.package."*"]` and `fsmm-core` use `opt-level = 2`; the cost is a longer first dev build. Rejected: accepting a slow dev app; testing only release builds.
+
+## 2026-11-19: M4 — switching patches two attribute values, nothing else
+
+Why: `gameSettings.xml` is the game's file and holds the user's passwords; the app may change only what it means to change. The core replaces the byte ranges of the `active` and `directory` values (roxmltree positions), escaping only `&`, `<`, `>` and the quote that delimits the value, so every other byte, including formatting, survives and a switch and its undo give a byte-identical file (verified on the real file). The game's default folder is `active="false"` with `directory` left alone. Rejected: re-serialising the document; regex edits; pointing `directory` at `mods`.
+
+## 2026-11-19: M4 — every write is guarded, backed up, atomic, verified and journaled
+
+Why: the game rewrites this file itself. A write is refused while the game or the dedicated server runs (checked again just before the rename), and when the file changed since it was read. The current file is first copied to `%APPDATA%\com.simvizion.modmanager\backups` (newest 20 kept), the new content goes to a temp file beside it and replaces it with a rename, and the result is re-read and checked, with the original put back on a mismatch. Each write is a row in `library.sqlite`'s `ops` journal; Undo is by operation id and only while the file still holds what that operation wrote. Pruning old backups and removing temp files deletes the app's own files directly; the Recycle Bin rule is for the user's files. Rejected: writing in place; backups beside the game file; unlimited backups; a global undo.
+
+## 2026-11-19: Debug builds write game files only when asked
+
+Why: a development session must not change the developer's real settings by accident. Debug builds refuse with `writesDisabled` unless `FSMM_ALLOW_GAME_WRITES=1` is set; release builds always write. Tests only ever write to temp folders. Rejected: no guard; a guard that also blocks release builds.

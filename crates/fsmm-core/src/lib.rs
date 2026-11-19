@@ -9,6 +9,7 @@ pub mod discovery;
 pub mod icons;
 pub mod library;
 pub mod model;
+pub mod ops;
 pub mod scan;
 pub mod store;
 

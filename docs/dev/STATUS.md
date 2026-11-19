@@ -1,66 +1,47 @@
 # Status
 
-Updated: 2026-11-18, branch `m3-real-data`
+Updated: 2026-11-19, branch `m4-safe-switching`
 
 ## Active work
 
-Milestone 3 (real data in the app) is built and waiting for the user's review as a pull request. Plan: `docs/dev/plans/2026-11-18-m3-real-data.md`. M1 and M2 are merged to `main` (PRs #1 and #2).
+Milestone 4 (safe switching of the active mod folder) is built and waiting for the user's review as a pull request. Plan: `docs/dev/plans/2026-11-18-m4-safe-switching.md`. M1–M3 are merged to `main` (PRs #1–#3).
 
-- `fsmm-core::store`: `library.sqlite` (profile registry) and `cache.sqlite` (scan records, thumbnails), with migrations.
-- `fsmm-core::library`:
-  - registry seeding;
-  - fresh, cache-assisted scans with progress;
-  - `also_in`, profile summaries, thumbnails.
-- `fsmm-core::discovery::game_context`: folders, language and the current descVersion for the library.
-- `src-tauri`: six commands (ids only), the `thumb` protocol, the folder picker, and Explorer open/reveal.
+- `fsmm-core::ops`: patches `modsDirectoryOverride` in place. Every write is guarded (game/server running, concurrent change), backed up (newest 20), atomically replaced, then verified.
+- `fsmm-core::library` switching: `set_active`, `undo_switch`, `latest_backup`, `restore_backup`, plus the `ops` journal in `library.sqlite`.
+- `src-tauri`: four commands, and the debug-build write guard (`FSMM_ALLOW_GAME_WRITES=1`).
 - Frontend:
-  - Tauri `Api` client, chosen automatically in the desktop app;
-  - read progress;
-  - worded error codes and issue details;
-  - Add mod folder, Open folder, Show in folder;
-  - game status polled every 5 s and on focus;
-  - sample-data pill only for the mock.
+  - "Set as active" with a busy state; it is disabled, with an explanation, while the game or server runs.
+  - A success banner with Undo.
+  - Worded errors.
+  - An emergency restore offer when `gameSettings.xml` is unreadable.
+  - Mock switches `?mock=running|server|brokenSettings|writeFails`.
 
 ## Next step
 
-User reviews the M3 pull request. After merge, plan Milestone 4: switching the active folder (writing `modsDirectoryOverride` safely), backups and restore, and the running-game guard.
+User reviews the M4 pull request. After merge, plan Milestone 5 (profile operations): copy and move between folders, removal to the Recycle Bin, Compare mode, savegame comparison, tags, profile rename and remove-from-list.
 
 ## Last verification
 
-2026-11-18, M3 integration branch:
+2026-11-19, M4 integration branch:
 
-- `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace` (214 passed, 1 ignored).
-- `npm run check` (108 tests). `npm run gen:types` produces no diff.
-
-Real app (`npm run tauri dev`, read-only, screenshots through `orca computer`):
-
-- **Profiles and library:**
-  - The three real folders became profiles, with counts 592 / 6 / 15.
-  - `$testingMods` is marked ACTIVE, and `mods` is marked as the game default folder.
-  - Totals: 613 mods, 26.8 GB, 13 with issues.
-  - Real icons appear in list and grid.
-  - The inspector on a conflict copy shows "Copy of FS25_AgroForests".
-  - Descriptions keep their line breaks (fixed during integration).
-- **Explorer and the folder picker:**
-  - Open folder and Show in folder open Explorer on the right folder.
-  - The Add mod folder picker opens, and cancelling changes nothing.
-- **Timings (dev build):**
-  - `list_profiles`: 428 ms on the first launch with dependencies unoptimised, 207 ms with an empty cache once dependencies are optimised, 125 ms on a warm cache.
-  - `list_mods` for `mods` (592): 108 ms.
-  - Thumbnails: 612 ms average on first decode while dependencies were unoptimised, 34 ms after the dev opt-level change, 0.6 ms from the cache.
-- **Safety:** the three mod folders (2,747 files; name, size, mtime) and the `gameSettings.xml` mtime were identical before and after the session.
+- `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace` (272 passed, 1 ignored).
+- `npm run check` (131 tests). `npm run gen:types` produces no diff.
+- **Dev guard:** in `npm run tauri dev` without the variable, "Set as active" showed "This development build does not write game files, so nothing was changed." The file hash was unchanged and no backup was taken.
+- **Real-file round trip** (user-approved, game and server closed, `FSMM_ALLOW_GAME_WRITES=1`):
+  1. Set `mods` active. Only line 3 changed, to `active="false"`, with the directory kept and the BOM preserved. The rail, header and status bar followed, and the success banner with Undo appeared.
+  2. Undo. The SHA-256 equalled the original.
+  3. Set `$offlineTestingMods` active, then `$testingMods`. The SHA-256 equalled the original again.
+  4. Four backups and four journal rows (switch, undo, switch, switch), all `ok`.
+  5. No temp file left beside `gameSettings.xml`. The mod folders (name, size, mtime) were unchanged.
 
 ## Known issues
 
-- Not checked in the real window:
-  - the 960×600 layout (window resizing needs foreground control);
-  - the game-running state (the game was not started);
-  - grid smoothness, which was only judged by eye on screenshots while scrolling.
-- `list_mods` scans other profiles that have no last scan one after another, so the first listing can scan every profile.
-- Cold-cache (first boot) disk timings are unmeasured.
+- The undo-failure banners (`nothingToUndo`, `settingsChanged`) are covered by tests but were not triggered in a real window.
+- The 960×600 layout of the new banners was not checked.
+- An undo whose previous state had no `directory` restores only `active` (exact for the real file's shape).
 - From earlier milestones:
   - GIANTS and Epic detection is fixture-only.
-  - The descVersion acceptance rule is unconfirmed.
+  - The descVersion rule is unconfirmed.
+  - Cold-boot timings are unmeasured.
   - The emblem is a placeholder.
   - Later-milestone buttons are inert.
-  - Checkbox is not built.

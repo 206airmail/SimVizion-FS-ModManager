@@ -2,9 +2,11 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod commands;
+mod switching;
 mod thumbs;
 
 use std::fs;
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use fsmm_core::library::Library;
@@ -14,6 +16,8 @@ use tauri::Manager;
 /// Shared by every command and the thumbnail protocol.
 pub struct AppState {
     pub library: Arc<Library>,
+    /// Where `gameSettings.xml` is backed up before every write (plan M4).
+    pub backups_dir: PathBuf,
 }
 
 fn main() {
@@ -31,6 +35,7 @@ fn main() {
             )?;
             app.manage(AppState {
                 library: Arc::new(Library::new(store, thumbs::BASE_URL)),
+                backups_dir: data_dir.join("backups"),
             });
             Ok(())
         })
@@ -42,6 +47,10 @@ fn main() {
             commands::add_profile,
             commands::open_profile_folder,
             commands::show_mod_in_folder,
+            switching::set_active_profile,
+            switching::undo_switch,
+            switching::latest_settings_backup,
+            switching::restore_settings_backup,
         ])
         .run(tauri::generate_context!())
         .expect("error while running SimVizion Mod Manager");

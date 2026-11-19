@@ -3541,6 +3541,7 @@ name = "simvizion-mod-manager"
 version = "0.1.0"
 dependencies = [
  "fsmm-core",
+ "humantime",
  "serde",
  "serde_json",
  "tauri",
