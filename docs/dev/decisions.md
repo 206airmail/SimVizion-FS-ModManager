@@ -57,3 +57,23 @@ Why: user-facing text lives in `src/strings.ts`. The core puts the data a messag
 ## 2026-11-18: Paid DLC dependencies are not flagged
 
 Why: mods may depend on `pdlc_*` names, which are DLCs, never in a mod folder, and DLC ownership is not known yet. They count as satisfied until a later milestone reads ownership. Rejected: flagging them as missing (false positives).
+
+## 2026-11-18: M3 — every listing is fresh, the cache only saves reads
+
+Why: re-enumerating a folder costs about 45 ms for 590 zips, so each `listProfiles`/`listMods` (and Rescan) looks at the disk and re-reads only files whose path, size or mtime changed. No stale views and no file watcher yet. Rejected: showing the cache until a manual rescan; a file watcher now.
+
+## 2026-11-18: M3 — progress events, not partial lists
+
+Why: health rules and sorting need the whole folder, and rows appearing under the user's selection are worse than a short wait with "Reading 120 of 590 mods". Rejected: streaming batches of mods into the table.
+
+## 2026-11-18: M3 — user data and cache in separate SQLite files
+
+Why: `library.sqlite` (app data) holds what the user chose, `cache.sqlite` (app cache) holds scan records and thumbnails that can always be rebuilt, so the cache can be deleted, or recreated when corrupt, without losing anything. Thumbnails are BLOBs keyed by path, size and mtime: no file naming or orphan cleanup. `rusqlite` with bundled SQLite. Rejected: one database; thumbnail files; JSON files.
+
+## 2026-11-18: M3 — thumbnails through a custom protocol, commands take ids
+
+Why: `ModEntry.icon` is `http://thumb.localhost/<profile>/<mod>?v=<size>-<mtime>`, decoded on first request and cached, so only icons that scroll into view cost anything. The handler and every command resolve ids through the registry and the last scan, so the frontend can never make the app read or open an arbitrary path. Rejected: the asset protocol with a filesystem scope; decoding every icon during the scan; path arguments from the frontend.
+
+## 2026-11-18: Dependencies and the core are optimised in dev builds
+
+Why: unoptimised zip inflate, DDS decoding and resizing made first-time thumbnails average about 610 ms each in `tauri dev` (34 ms once optimised; cache hits 0.6 ms). `[profile.dev.package."*"]` and `fsmm-core` use `opt-level = 2`; the cost is a longer first dev build. Rejected: accepting a slow dev app; testing only release builds.

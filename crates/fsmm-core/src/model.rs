@@ -171,6 +171,59 @@ pub struct ScanSummary {
     pub scanned_at: String,
 }
 
+/// Progress of reading one profile's mods, streamed while `listMods` runs.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct ScanProgress {
+    pub profile_id: String,
+    pub done: u32,
+    pub total: u32,
+}
+
+/// Why a command failed. The frontend words each code; `detail` carries data, not sentences.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub enum ErrorCode {
+    /// The profile id is not registered (it may have been removed in another window).
+    ProfileNotFound,
+    /// The profile's folder, or the mod, no longer exists on disk.
+    FolderMissing,
+    /// The folder exists but could not be listed or read.
+    FolderUnreadable,
+    /// Anything unexpected; `detail` holds a technical message for a bug report.
+    Internal,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct ApiError {
+    pub code: ErrorCode,
+    pub detail: Option<String>,
+}
+
+impl ApiError {
+    pub fn new(code: ErrorCode, detail: impl Into<Option<String>>) -> Self {
+        Self {
+            code,
+            detail: detail.into(),
+        }
+    }
+}
+
+impl std::fmt::Display for ApiError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match &self.detail {
+            Some(detail) => write!(f, "{:?}: {detail}", self.code),
+            None => write!(f, "{:?}", self.code),
+        }
+    }
+}
+
+impl std::error::Error for ApiError {}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -196,6 +249,15 @@ mod tests {
         })
         .unwrap();
         assert_eq!(json, r#"{"type":"available","version":"1.2.0.0"}"#);
+    }
+
+    #[test]
+    fn api_error_serialises_its_code_in_camel_case() {
+        let error = ApiError::new(ErrorCode::FolderMissing, Some("p1".to_string()));
+        assert_eq!(
+            serde_json::to_string(&error).unwrap(),
+            r#"{"code":"folderMissing","detail":"p1"}"#
+        );
     }
 
     #[test]

@@ -26,6 +26,10 @@ use crate::model::{
 
 pub use health::assess;
 
+/// Bump whenever `read_mod` would produce a different record for the same file, so cached
+/// records from older versions are read again.
+pub const SCAN_VERSION: u32 = 1;
+
 /// `NotAMod` detail: the file is not a readable zip, or the folder cannot be read.
 pub const NOT_A_MOD_UNREADABLE: &str = "unreadableArchive";
 /// `NotAMod` detail: there is no `modDesc.xml` at the root.

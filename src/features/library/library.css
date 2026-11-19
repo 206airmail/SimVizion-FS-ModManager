@@ -321,6 +321,48 @@
   height: 24px;
 }
 
+/* Progress while a folder is read: label and percent above a recessed track with a lime fill. */
+.mm-progress {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px;
+  border-bottom: 1px solid var(--sv-border);
+}
+.mm-progress__label {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--sv-text-readable-secondary);
+}
+.mm-progress__track {
+  height: 6px;
+  overflow: hidden;
+  border-radius: 3px;
+  background: var(--sv-recessed);
+}
+.mm-progress__fill {
+  height: 100%;
+  border-radius: 3px;
+  background: var(--sv-lime);
+  transition: width 150ms ease-out;
+}
+@media (prefers-reduced-motion: reduce) {
+  .mm-progress__fill {
+    transition: none;
+  }
+}
+
+/* Failed one-off actions, shown where the action was taken. */
+.mm-library__notice {
+  flex: none;
+  margin: 8px 12px;
+}
+.mm-inspector__notice {
+  flex: none;
+  margin: 0 8px 8px;
+}
+
 /* ---------- Inspector ---------- */
 .mm-inspector__scroll {
   flex: 1;
@@ -378,6 +420,8 @@
 .mm-inspector__description {
   color: var(--sv-text-readable-secondary);
   overflow-wrap: anywhere;
+  /* Real descriptions use line breaks for lists and changelogs. */
+  white-space: pre-line;
 }
 .mm-inspector__footer-gap {
   flex: 1;

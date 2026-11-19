@@ -354,5 +354,49 @@ pub fn game_status(probe: &dyn SystemProbe) -> GameStatus {
     }
 }
 
+/// What the library needs to know about the game to scan and label profiles.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct GameContext {
+    pub user_dir: Option<PathBuf>,
+    /// The folder the game currently loads mods from.
+    pub effective_mods_dir: Option<PathBuf>,
+    /// `<user folder>\mods`, used when no override is active.
+    pub default_mods_dir: Option<PathBuf>,
+    /// Preferred languages for titles and descriptions, most preferred first.
+    pub languages: Vec<String>,
+    /// Plan M2 decision 2: only set when the log matches the installed game.
+    pub logged_desc_version: Option<u32>,
+}
+
+/// Gathers the [`GameContext`]. Reads `gameSettings.xml` (only the override element) and the
+/// head of `log.txt`; the language comes from the log and falls back to `en`.
+pub fn game_context(probe: &dyn SystemProbe) -> GameContext {
+    let installed = find_installs(probe)
+        .into_iter()
+        .next()
+        .and_then(|i| i.version);
+    let user = user_dir(probe);
+    let mods_override = user
+        .as_ref()
+        .and_then(|u| read_mods_override(&u.join("gameSettings.xml")).ok());
+    let log = user
+        .as_ref()
+        .and_then(|u| read_log_summary(&u.join("log.txt")).ok());
+    let language = log
+        .as_ref()
+        .and_then(|l| l.language.clone())
+        .filter(|l| !l.is_empty())
+        .unwrap_or_else(|| "en".to_string());
+    GameContext {
+        effective_mods_dir: effective_mods_dir(user.as_deref(), mods_override.as_ref()),
+        default_mods_dir: user.as_ref().map(|u| u.join("mods")),
+        languages: vec![language],
+        logged_desc_version: log
+            .as_ref()
+            .and_then(|l| current_desc_version(l, installed.as_deref())),
+        user_dir: user,
+    }
+}
+
 #[cfg(test)]
 mod tests;

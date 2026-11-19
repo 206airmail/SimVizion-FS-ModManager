@@ -19,7 +19,7 @@ Current work state: `docs/dev/STATUS.md` (read before substantial work). Decisio
 | --------------------------------- | ------------------------------------------------------------- |
 | Install                           | `npm install`                                                 |
 | Frontend in a browser (mock data) | `npm run dev` then open `http://localhost:1420`               |
-| Desktop app                       | `npm run tauri dev`                                           |
+| Desktop app (real folders)        | `npm run tauri dev`                                           |
 | All frontend checks               | `npm run check`                                               |
 | Type-check / lint / format        | `npm run typecheck` / `npm run lint` / `npm run format`       |
 | Frontend tests (all / one file)   | `npm test` / `npm test -- src/path/file.test.ts`              |
@@ -41,6 +41,7 @@ Current work state: `docs/dev/STATUS.md` (read before substantial work). Decisio
 - Never log or commit the contents of `gameSettings.xml` (it holds plain-text multiplayer passwords), real mod files, real mod icons, or machine-specific paths.
 - Nothing is deleted outright. Removal goes to the Windows Recycle Bin and must fail rather than fall back to permanent deletion.
 - No writes to game files while the game or the dedicated server is running.
+- The desktop app reads the real game folders. Its own files are `library.sqlite` (user data, `%APPDATA%\com.simvizion.modmanager`) and `cache.sqlite` (disposable, `%LOCALAPPDATA%\com.simvizion.modmanager`).
 - No network calls before the mod-updates milestone, and never telemetry.
 
 ## Git
