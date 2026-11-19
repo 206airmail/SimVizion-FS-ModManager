@@ -11,7 +11,9 @@ import './features/files/files.css';
 import './features/compare/compare.css';
 import './features/savegames/savegames.css';
 import './features/updates/updates.css';
-import './features/gallery/gallery.css';
+import './features/appUpdate/appUpdate.css';
+import './features/health/health.css';
+import './features/welcome/welcome.css';
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

@@ -1,6 +1,14 @@
 // All user-facing text lives here so the app can be translated later.
 
-import type { ErrorCode, IssueKind, ModKind, ModSource, Severity } from './api';
+import type {
+  ErrorCode,
+  GameStore,
+  IssueKind,
+  ModKind,
+  ModSource,
+  Severity,
+  UserDirSource,
+} from './api';
 import { formatCount } from './lib/format';
 
 const plural = (count: number, one: string, many: string) => (count === 1 ? one : many);
@@ -94,6 +102,12 @@ export const strings = {
     prepareCopy: 'Could not prepare the copy',
     renameProfile: 'Could not rename the folder',
     removeProfile: 'Could not remove the folder from the list',
+    launch: 'Could not start the game',
+    chooseGameFolder: 'Could not use that folder',
+    clearGameFolder: 'Could not go back to the detected folder',
+    setAppUpdates: 'Could not change the app update setting',
+    checkAppUpdate: 'Could not check for an app update',
+    installAppUpdate: 'The update could not be installed',
     dismiss: 'Dismiss',
   },
 
@@ -130,6 +144,13 @@ export const strings = {
     gameNotRunning: 'Not running',
     gameVersion: (version: string) => `Version ${version}`,
     launch: 'Launch game',
+    launchHint: 'Start Farming Simulator 25',
+    launchStarting: 'Starting…',
+    launchStartingReason: 'The game is starting.',
+    launchBlockedRunning: 'Farming Simulator 25 is already running.',
+    launchBlockedNone:
+      'No Farming Simulator 25 installation was found, so the app has nothing to start.',
+    launchChecking: 'Looking for the game…',
   },
 
   rail: {
@@ -241,11 +262,75 @@ export const strings = {
     noMatchesTitle: 'No mods match',
     noMatchesText: 'Nothing in this profile fits the current search and filters.',
     clearFilters: 'Clear search and filters',
-    notBuiltTitle: (section: string) => `${section} is not built yet`,
-    notBuiltText:
-      'This prototype covers the Library screen. Other sections arrive in later milestones.',
-    backToLibrary: 'Back to the library',
     appFailedTitle: 'Could not load profiles',
+    loadingProfiles: 'Loading mod folders',
+  },
+
+  /** The screen that replaces the library when there is nothing to show yet (first run). */
+  welcome: {
+    noGameTitle: 'Farming Simulator 25 was not found',
+    noGameText:
+      'The app could not find the game’s user folder, the one that holds gameSettings.xml, your mods and your savegames. It looked in:',
+    searched: [
+      'Documents\\My Games\\FarmingSimulator2025',
+      'The Microsoft Store app folder of Farming Simulator 25',
+    ],
+    noGameNote:
+      'You can still add any mod folder and look through it. Switching the active folder and checking savegames need the game folder.',
+    chooseGameFolder: 'Choose game folder…',
+    noFoldersTitle: 'No mod folders yet',
+    noFoldersText:
+      'Add the folder where your mods are kept to see what is in it. Nothing in it is changed or moved.',
+    addFolder: 'Add mod folder',
+  },
+
+  gameFolder: {
+    title: 'Game folder',
+    lead: 'The folder that holds gameSettings.xml, the mods folder and your savegames.',
+    pathLabel: 'User folder',
+    sourceLabel: 'Source',
+    sources: {
+      detected: 'Detected automatically',
+      chosen: 'Chosen by you',
+      none: 'Not found',
+    } satisfies Record<UserDirSource, string>,
+    storeLabel: 'Installed from',
+    stores: {
+      steam: 'Steam',
+      giants: 'GIANTS Software',
+      epic: 'Epic Games',
+      microsoftStore: 'Microsoft Store',
+    } satisfies Record<GameStore, string>,
+    noStore: 'No installation found',
+    notFound:
+      'No Farming Simulator 25 user folder was found. Choose the folder that holds gameSettings.xml and the mods folder.',
+    choose: 'Choose…',
+    useDetected: 'Use detected folder',
+    chosenNote: 'This folder is used instead of the one the app would find itself.',
+  },
+
+  health: {
+    title: 'Health',
+    summary: (modCount: number, folderCount: number) =>
+      `${mods(modCount)} with issues in ${formatCount(folderCount)} ${plural(folderCount, 'folder', 'folders')}`,
+    summaryClean: 'No mod has issues',
+    rescan: 'Check again',
+    folderLabel: 'Show only one mod folder',
+    folderPrefix: 'Folder',
+    folderAll: 'All folders',
+    kindLabel: 'Kind of issue',
+    kindAll: 'All issues',
+    tableLabel: 'Mods with issues',
+    columns: { title: 'Mod', modName: 'File name', folder: 'Folder', issues: 'Issues' },
+    more: (count: number) => `+${formatCount(count)}`,
+    open: (title: string, folder: string) => `Show ${title} in ${folder}`,
+    emptyTitle: 'No problems found',
+    emptyText: 'None of the mods in your folders have issues.',
+    noMatchesTitle: 'No mods match',
+    noMatchesText: 'No mod has this kind of issue in this folder.',
+    clearFilters: 'Show all issues',
+    loadingLabel: 'Checking your folders',
+    failedTitle: 'Could not check your folders',
   },
 
   inspector: {
@@ -603,6 +688,10 @@ export const strings = {
     loadFailedTitle: 'Could not read the savegames',
     reportFailedTitle: 'Could not check this savegame',
     noFolders: 'Add a mod folder first. A savegame is checked against one of your folders.',
+    noGameFolderTitle: 'Game folder not found',
+    noGameFolderText:
+      'Savegames are read from the game’s user folder, which the app could not find. Choose it in Settings.',
+    openSettings: 'Open Settings',
   },
 
   profileMenu: {
@@ -634,6 +723,7 @@ export const strings = {
     settings: {
       title: 'Settings',
       onlineTitle: 'Online',
+      modsGroupTitle: 'Mod updates',
       switchLabel: 'Check for mod updates online',
       sent: 'When this is on, the app sends the file names of your mods to SiloAPI, a service by HLLMR Ventures, to find newer versions. For a zip whose name the service does not know, it also sends a fingerprint of the file (its SHA-256). Nothing else is sent, and nothing at all leaves your computer while this is off.',
       downloads:
@@ -653,8 +743,17 @@ export const strings = {
         `The update service asked the app to wait. It will be asked again after ${time}.`,
     },
     prompt: {
-      title: 'Find out which mods have updates?',
-      text: 'This sends your mod file names (and a fingerprint of any zip the service does not know) to SiloAPI. Nothing is sent while it is off.',
+      title: 'Turn on online update checks?',
+      lead: 'Both are off until you turn them on. Nothing is sent while they are off.',
+      mods: {
+        label: 'Check for mod updates',
+        detail:
+          'Sends your mod file names (and a fingerprint of any zip the service does not know) to SiloAPI.',
+      },
+      app: {
+        label: 'Check for app updates',
+        detail: 'Asks GitHub once a day whether a newer version of this app is out.',
+      },
       turnOn: 'Turn on',
       notNow: 'Not now',
     },
@@ -711,6 +810,41 @@ export const strings = {
     },
   },
 
+  appUpdates: {
+    settings: {
+      groupTitle: 'App updates',
+      switchLabel: 'Check for app updates',
+      sent: 'When this is on, the app asks GitHub Releases whether a newer version of SimVizion Mod Manager is out: a plain download of a small file, at most once a day. Your mods and folders are not sent.',
+      downloads:
+        'An update is downloaded only when you press Install and restart, and its signature is checked before it runs.',
+      lastCheck: 'Last check',
+      neverChecked: 'Not yet',
+      result: 'Result',
+      upToDate: 'You have the latest version.',
+      available: (version: string) => `Version ${version} is available.`,
+      checkNow: 'Check now',
+      checking: 'Checking…',
+      off: 'Switched off. Nothing is sent.',
+      failedTitle: 'The app update did not finish',
+    },
+    banner: {
+      title: (version: string) => `Version ${version} is available`,
+      text: 'Installing closes the app and starts the new version. Your mods and settings are kept.',
+      notesLabel: 'What is new',
+      showNotes: 'Show notes',
+      hideNotes: 'Hide notes',
+      install: 'Install and restart',
+      installing: 'Installing…',
+      restarting: 'Restarting…',
+      retry: 'Try again',
+      later: 'Later',
+      progress: (done: string, total: string) => `${done} of ${total}`,
+      percent: (fraction: number) => `${Math.floor(fraction * 100)}%`,
+      preparing: 'Downloading the update',
+      progressLabel: 'Installing the update',
+    },
+  },
+
   status: {
     gameRunning: 'Game is running',
     gameNotRunning: 'Game is not running',
@@ -718,6 +852,8 @@ export const strings = {
     settingsMissing: 'gameSettings.xml not readable',
     overrideOn: 'Mod folder override on',
     overrideOff: 'Using the game default folder',
+    store: (store: string) => `Game: ${store}`,
+    noGameFolder: 'Game folder not found',
   },
 
   gallery: {

@@ -1,0 +1,67 @@
+/* First-run screen: what the library area shows before there is anything to browse. */
+
+.mm-welcome {
+  align-items: center;
+  justify-content: center;
+  overflow: auto;
+}
+.mm-welcome__body {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  max-width: 520px;
+  padding: 24px;
+  text-align: center;
+}
+.mm-welcome__mark {
+  display: grid;
+  place-items: center;
+  width: 64px;
+  height: 64px;
+  margin-bottom: 4px;
+  border: 1px solid var(--sv-border);
+  border-radius: 8px;
+  background: var(--sv-surface-content-raised);
+  color: var(--sv-link);
+}
+.mm-welcome__title {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+}
+.mm-welcome__text {
+  max-width: 460px;
+  margin: 0;
+  color: var(--sv-text-readable-secondary);
+}
+.mm-welcome__places {
+  align-self: stretch;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 8px 12px;
+  border: 1px solid var(--sv-border);
+  border-radius: var(--sv-radius-control);
+  background: var(--sv-recessed);
+  color: var(--sv-text-readable-secondary);
+  font: 400 12px var(--sv-font-mono);
+  list-style: none;
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+.mm-welcome__note {
+  max-width: 460px;
+  margin: 0;
+  color: var(--sv-text-secondary);
+  font-size: 12px;
+}
+.mm-welcome__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 6px;
+}

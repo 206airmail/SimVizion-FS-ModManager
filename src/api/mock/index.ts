@@ -6,8 +6,11 @@ import type {
   Comparison,
   ErrorCode,
   GameStatus,
+  GameStore,
   HashProgress,
   HealthReport,
+  HealthRow,
+  IssueKind,
   LinkKind,
   ModEntry,
   OpProgress,
@@ -22,6 +25,7 @@ import type {
   UpdateCheck,
   UpdatePlan,
   UpdateSettings,
+  UserDirSource,
 } from '..';
 import { validateProfileName } from '../../lib/profileName';
 import { ApiFailure } from '../../lib/errors';
@@ -92,6 +96,19 @@ export interface MockOptions {
   hashMismatch?: boolean;
   /** ModHub installs fail with notInstallable (the page has no download link). Default false. */
   noModHubLink?: boolean;
+  /**
+   * No game user folder was found: no profiles, no saves, no install to launch. "Choose game
+   * folder" then reveals the normal data. Default false.
+   */
+  noGame?: boolean;
+  /** The game's user folder exists but no mod folder is listed; adding one lists the sample folders. Default false. */
+  noProfiles?: boolean;
+  /** The game is the Microsoft Store version (its user folder is in the app's package folder). Default false. */
+  msStore?: boolean;
+  /** App updates start switched on, and a newer version (0.9.0-beta.2) is found. Default false. */
+  appUpdate?: boolean;
+  /** Like `appUpdate`, but the install fails part-way with appUpdateFailed. Default false. */
+  appUpdateFails?: boolean;
   /** Called when a mod link is "opened" (the mock opens nothing); for tests. */
   onOpenLink?: (url: string, kind: LinkKind) => void;
 }
@@ -130,6 +147,31 @@ const MAX_TICKS = 200;
 const FREE_BYTES = 48 * 1024 ** 3;
 
 const MODS_ROOT = 'C:\\Users\\Player\\Documents\\My Games\\FarmingSimulator2025';
+/** Where the Microsoft Store version keeps its user folder (the package id is made up). */
+const MS_STORE_DIR =
+  'C:\\Users\\Player\\AppData\\Local\\Packages\\GIANTSSoftware.FarmingSimulator25PC_0000000000000\\LocalCache\\Local';
+/** The folder "Choose game folder" accepts in the mock. */
+const CHOSEN_DIR = 'D:\\Games\\FS25 User';
+/** How long after "Launch game" the mock game shows as running. */
+const LAUNCH_DELAY_MS = 3000;
+
+/** The update the mock finds, with notes of several paragraphs. */
+const APP_UPDATE: AppUpdate = {
+  version: '0.9.0-beta.2',
+  date: '2026-11-26T10:00:00Z',
+  notes:
+    'This beta adds the Health screen, a working Launch game button, and a first-run screen for computers where Farming Simulator 25 is not found.\n\nAlso new: Microsoft Store detection, and updates for the app itself, which stay off until you switch them on.\n\nFixes:\n- The mod list no longer flickers while a folder is read again.\n- Copying a mod to a folder on another drive reports the free space correctly.\n- Several wording fixes.',
+};
+const APP_UPDATE_BYTES = 28 * 1024 * 1024 + 410 * 1024;
+const ISSUE_KINDS: readonly IssueKind[] = [
+  'notAMod',
+  'invalidFileName',
+  'nestedArchive',
+  'zipAndFolderTwin',
+  'conflictCopy',
+  'descVersionMismatch',
+  'missingDependency',
+];
 
 const MAIN_RECIPE: Recipe = {
   notAMod: 3,
@@ -300,6 +342,11 @@ export function createMockApi(options: MockOptions = {}): Api {
     rateLimited = false,
     hashMismatch = false,
     noModHubLink = false,
+    noGame = false,
+    noProfiles = false,
+    msStore = false,
+    appUpdate = false,
+    appUpdateFails = false,
     onOpenLink,
   } = options;
   const wait = (): Promise<void> =>
@@ -323,8 +370,42 @@ export function createMockApi(options: MockOptions = {}): Api {
   // Tags and notes (shared by every profile), the saves, and the hashes computed so far.
   const meta = seedMeta(dataset(stress).mods.get('main') ?? []);
   let saveDefs: SaveDef[] | null = null;
+  // The game's user folder and install: absent (noGame) until a folder is chosen, and the game
+  // shows as running once a launch has had time to start it.
+  let userDirSource: UserDirSource = noGame ? 'none' : 'detected';
+  let profilesShown = !(noGame || noProfiles);
+  const store: GameStore | null = noGame ? null : msStore ? 'microsoftStore' : 'steam';
+  let launchedAt: number | null = null;
+  const gameIsRunning = (): boolean =>
+    gameRunning || (launchedAt !== null && Date.now() - launchedAt >= LAUNCH_DELAY_MS);
+  const gameStatus = (): GameStatus => {
+    const hasDir = userDirSource !== 'none';
+    // The game's default folder means the override is off; an unreadable file tells us nothing.
+    const overrideActive =
+      hasDir && !settingsBroken && activeId !== null && activeId !== DEFAULT_PROFILE_ID;
+    return {
+      gameVersion: hasDir ? '1.25.1.0' : null,
+      gameRunning: gameIsRunning(),
+      serverRunning,
+      settingsReadable: hasDir && !settingsBroken,
+      overrideActive,
+      effectiveModsDir: hasDir && !settingsBroken ? pathOf(activeId) : null,
+      loggedDescVersion: hasDir ? GAME_DESC_VERSION : null,
+      store,
+      launchable: store !== null,
+      userDirSource,
+      userDir:
+        userDirSource === 'chosen' ? CHOSEN_DIR : userDirSource === 'detected' ? userDirOf() : null,
+    };
+  };
+  const userDirOf = () => (msStore ? MS_STORE_DIR : MODS_ROOT);
   const saves = (): SaveDef[] =>
-    noSaves ? [] : (saveDefs ??= buildSaves(dataset(stress).mods, brokenSave));
+    noSaves || userDirSource === 'none'
+      ? []
+      : (saveDefs ??= buildSaves(dataset(stress).mods, brokenSave));
+  // The app's own updates: off unless the switch is on, and nothing is found while it is off.
+  let appSettings: AppUpdateSettings = { enabled: appUpdate || appUpdateFails, lastCheck: null };
+  const appUpdateFound = appUpdate || appUpdateFails;
   // Online updates: the settings, the catalog (built on first use, shown only once a check has
   // succeeded) and the user's own links, by lower-cased mod name.
   let settings: UpdateSettings = {
@@ -425,9 +506,12 @@ export function createMockApi(options: MockOptions = {}): Api {
 
   return {
     sampleData: true,
+    /** The picker is never answered, except to list the sample folders when none are listed. */
     async addProfile(): Promise<Profile | null> {
       await wait();
-      return null;
+      if (profilesShown) return null;
+      profilesShown = true;
+      return state().profiles[0] ?? null;
     },
     async openProfileFolder(): Promise<void> {},
     async showModInFolder(): Promise<void> {},
@@ -865,37 +949,84 @@ export function createMockApi(options: MockOptions = {}): Api {
       if (url === null) throw new ApiFailure('folderMissing');
       onOpenLink?.(url, kind);
     },
-    // Plan M8 stubs; WS-C builds the mock behaviour.
+    /** Refused while the game runs or when nothing can be started; else the game appears running shortly after. */
     async launchGame(): Promise<void> {
       await wait();
-      throw new ApiFailure('internal', 'notImplemented');
+      if (gameIsRunning()) throw new ApiFailure('gameRunning');
+      if (store === null) throw new ApiFailure('notLaunchable');
+      launchedAt = Date.now();
     },
+    /** Derived from the mods' own issues, so the counts match the folders' issue counts in the rail. */
     async healthReport(): Promise<HealthReport> {
       await wait();
-      throw new ApiFailure('internal', 'notImplemented');
+      if (failMods) throw new ApiFailure('folderUnreadable');
+      const rows: HealthRow[] = profilesShown
+        ? state().profiles.flatMap((profile) =>
+            (state().mods.get(profile.id) ?? [])
+              .filter((mod) => mod.issues.length > 0)
+              .map((mod) => ({
+                profileId: profile.id,
+                profileName: profile.name,
+                modId: mod.id,
+                modName: mod.modName,
+                title: mod.title,
+                issues: mod.issues.map((issue) => ({ ...issue })),
+              })),
+          )
+        : [];
+      const counts = ISSUE_KINDS.map((kind) => ({
+        kind,
+        count: rows.filter((row) => row.issues.some((issue) => issue.kind === kind)).length,
+      })).filter((entry) => entry.count > 0);
+      return { rows, counts };
     },
+    /** "Chooses" a valid folder: the sample data appears (and the game folder is "chosen"). */
     async chooseGameFolder(): Promise<GameStatus | null> {
       await wait();
-      return null;
+      userDirSource = 'chosen';
+      profilesShown = true;
+      return gameStatus();
     },
     async clearGameFolder(): Promise<GameStatus> {
-      return this.getGameStatus();
+      await wait();
+      userDirSource = noGame ? 'none' : 'detected';
+      return gameStatus();
     },
     async getAppUpdateSettings(): Promise<AppUpdateSettings> {
       await wait();
-      return { enabled: false, lastCheck: null };
+      return { ...appSettings };
     },
     async setAppUpdatesEnabled(enabled: boolean): Promise<AppUpdateSettings> {
       await wait();
-      return { enabled, lastCheck: null };
+      appSettings = { ...appSettings, enabled };
+      return { ...appSettings };
     },
+    /** Refused while off; otherwise about 1 s, then the update (with `appUpdate`) or null. */
     async checkAppUpdate(): Promise<AppUpdate | null> {
-      await wait();
-      throw new ApiFailure('updatesDisabled');
+      if (!appSettings.enabled) throw new ApiFailure('updatesDisabled');
+      await pause(1000);
+      if (offline) throw new ApiFailure('appUpdateFailed');
+      appSettings = { ...appSettings, lastCheck: new Date().toISOString() };
+      return appUpdateFound ? { ...APP_UPDATE } : null;
     },
-    async installAppUpdate(): Promise<void> {
-      await wait();
-      throw new ApiFailure('internal', 'notImplemented');
+    /** Streams the download for about 3 s and resolves (the real app restarts); `appUpdateFails` fails at 60%. */
+    async installAppUpdate(onProgress?: (progress: OpProgress) => void): Promise<void> {
+      if (!appUpdateFound) throw new ApiFailure('appUpdateFailed');
+      const ticks = 30;
+      const emit = (tick: number) =>
+        onProgress?.({
+          doneBytes: Math.round((APP_UPDATE_BYTES * tick) / ticks),
+          totalBytes: APP_UPDATE_BYTES,
+          current: `SimVizion-Mod-Manager_${APP_UPDATE.version}_x64-setup.exe`,
+          doneItems: 0,
+          totalItems: 1,
+        });
+      emit(0);
+      for (let tick = 1; tick <= ticks; tick++) {
+        await pause(100);
+        if (appUpdateFails && tick > 18) throw new ApiFailure('appUpdateFailed');
+        emit(tick);
+      }
     },
     async setSourceLink(modName: string, url: string | null): Promise<string | null> {
       await wait();
@@ -910,25 +1041,11 @@ export function createMockApi(options: MockOptions = {}): Api {
     },
     async getGameStatus(): Promise<GameStatus> {
       await wait();
-      // The game's default folder means the override is off; an unreadable file tells us nothing.
-      const overrideActive =
-        !settingsBroken && activeId !== null && activeId !== DEFAULT_PROFILE_ID;
-      return {
-        gameVersion: '1.25.1.0',
-        gameRunning,
-        serverRunning,
-        settingsReadable: !settingsBroken,
-        overrideActive,
-        effectiveModsDir: settingsBroken ? null : pathOf(activeId),
-        loggedDescVersion: GAME_DESC_VERSION,
-        store: 'steam',
-        launchable: true,
-        userDirSource: 'detected',
-        userDir: MODS_ROOT,
-      };
+      return gameStatus();
     },
     async listProfiles(): Promise<Profile[]> {
       await wait();
+      if (!profilesShown) return [];
       return state().profiles.map((p) => ({
         ...p,
         isActive: !settingsBroken && p.id === activeId,

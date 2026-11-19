@@ -5,16 +5,29 @@ import { strings } from '../../strings';
 import { Button } from '../../ui/Button';
 import { Banner } from '../../ui/Feedback';
 import { Switch } from '../../ui/Switch';
+import { AppUpdatesSettings } from '../appUpdate/AppUpdatesSettings';
+import type { AppUpdatesController } from '../appUpdate/useAppUpdates';
+import { GameFolderSection } from '../gameFolder/GameFolderSection';
+import type { GameFolderController } from '../gameFolder/useGameFolder';
+import type { GameStatus } from '../../api';
 import type { UpdatesController } from './useUpdates';
 
 const t = strings.updates.settings;
 
+export interface SettingsScreenProps {
+  updates: UpdatesController;
+  appUpdates: AppUpdatesController;
+  game: GameStatus | null;
+  gameFolder: GameFolderController;
+}
+
 /**
- * Settings. Today it holds one section, Online: the switch for update checks, what is sent and to
- * whom, and the state of the last check. Everything takes effect at once.
+ * Settings: Online (the switches for the mod and app update checks, what is sent and to whom, and
+ * the state of the last check) and the game folder. Everything takes effect at once.
  */
-export function SettingsScreen({ updates }: { updates: UpdatesController }) {
+export function SettingsScreen({ updates, appUpdates, game, gameFolder }: SettingsScreenProps) {
   const headingId = useId();
+  const modsHeadingId = useId();
   const { settings, checking, result, failure, pausedUntil: paused } = updates;
   const enabled = settings?.enabled === true;
 
@@ -28,6 +41,9 @@ export function SettingsScreen({ updates }: { updates: UpdatesController }) {
           <h3 id={headingId} className="mm-settings__heading">
             {t.onlineTitle}
           </h3>
+          <h4 id={modsHeadingId} className="mm-settings__subheading">
+            {t.modsGroupTitle}
+          </h4>
           <Switch
             checked={enabled}
             disabled={settings === null || checking}
@@ -107,7 +123,9 @@ export function SettingsScreen({ updates }: { updates: UpdatesController }) {
               )}
             </div>
           )}
+          <AppUpdatesSettings appUpdates={appUpdates} />
         </section>
+        <GameFolderSection game={game} gameFolder={gameFolder} />
       </div>
     </main>
   );
