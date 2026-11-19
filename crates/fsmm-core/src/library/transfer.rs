@@ -512,10 +512,25 @@ impl Library {
         if !unchanged(&item.src, item.stamp) {
             return Err(ErrorCode::TargetChanged);
         }
-        if let Some(existing) = &item.existing {
-            if !unchanged(&existing.path, existing.stamp) {
-                return Err(ErrorCode::TargetChanged);
+        let cancel = &self.transfer.cancel;
+        let mut on_bytes = |n| tracker.add_bytes(n);
+        let Some(existing) = &item.existing else {
+            return match plan.mode {
+                TransferMode::Copy => {
+                    files::copy_staged(&item.src, &plan.to_dir, &mut on_bytes, cancel)
+                }
+                TransferMode::Move => {
+                    files::move_item(&item.src, &plan.to_dir, &mut on_bytes, cancel, env.recycler)
+                }
             }
+            .map(|_| ())
+            .map_err(|e| file_op_code(&e));
+        };
+
+        if !unchanged(&existing.path, existing.stamp) {
+            return Err(ErrorCode::TargetChanged);
+        }
+        let mut recycle_existing = || {
             let recycled = env.recycler.recycle(&existing.path);
             self.journal_file_op(
                 "recycle",
@@ -526,19 +541,38 @@ impl Library {
                     .as_ref()
                     .map_or_else(|e| code_name(recycle_code(e)), |_| "ok".to_string()),
             );
-            recycled.map_err(|e| recycle_code(&e))?;
-        }
-
-        let cancel = &self.transfer.cancel;
-        let mut on_bytes = |n| tracker.add_bytes(n);
+            recycled.map_err(FileOpError::Recycle)
+        };
+        // The mod being replaced goes to the Recycle Bin only once its replacement is copied and
+        // verified, so a cancelled or failed copy leaves it in place. A move on one volume is an
+        // instant rename, so there the old mod can go first.
         match plan.mode {
-            TransferMode::Copy => {
-                files::copy_staged(&item.src, &plan.to_dir, &mut on_bytes, cancel).map(|_| ())
-            }
-            TransferMode::Move => {
+            TransferMode::Move if plan.renames_only => recycle_existing().and_then(|()| {
                 files::move_item(&item.src, &plan.to_dir, &mut on_bytes, cancel, env.recycler)
                     .map(|_| ())
-            }
+            }),
+            TransferMode::Copy => files::copy_staged_replacing(
+                &item.src,
+                &plan.to_dir,
+                &mut on_bytes,
+                cancel,
+                &mut recycle_existing,
+            )
+            .map(|_| ()),
+            // Across drives: as `files::move_item` does, the source goes to the bin once its copy
+            // is in place.
+            TransferMode::Move => files::copy_staged_replacing(
+                &item.src,
+                &plan.to_dir,
+                &mut on_bytes,
+                cancel,
+                &mut recycle_existing,
+            )
+            .and_then(|_| {
+                env.recycler
+                    .recycle(&item.src)
+                    .map_err(FileOpError::Recycle)
+            }),
         }
         .map_err(|e| file_op_code(&e))
     }

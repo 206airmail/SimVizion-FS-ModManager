@@ -552,6 +552,30 @@ fn a_replace_that_fails_to_recycle_for_another_reason_is_a_write_failure() {
     assert_eq!(names(&t.b), ["FS25_Fresh.zip", "fs25_same.zip"]);
 }
 
+#[test]
+fn a_cancelled_replace_leaves_the_old_mod_in_place() {
+    let t = T::new();
+    write_big(&t.a, "FS25_Same.zip", 9 * MIB);
+    write_mod(&t.b, "fs25_same.zip", "Old", "1.0.0.0");
+    let plan = t.plan(&["FS25_Same.zip"], TransferMode::Copy);
+    assert_eq!(plan.clashes.len(), 1);
+    // Requested right after the item's pre-copy check, so the copy itself notices it.
+    t.cancel_after_call.store(1, Ordering::SeqCst);
+
+    let result = t.exec(&plan.plan_id, &[choice("FS25_Same", true)]).unwrap();
+
+    assert_eq!(
+        failed(&result),
+        [("FS25_Same".to_string(), ErrorCode::Cancelled)]
+    );
+    assert!(
+        t.recycler.calls().is_empty(),
+        "the old mod was never binned"
+    );
+    assert_eq!(names(&t.b), ["fs25_same.zip"], "no staged copy is left");
+    assert_eq!(version_in(&t.b, "fs25_same.zip"), "1.0.0.0");
+}
+
 // ---------------------------------------------------------------- execute: changes since planning
 
 #[test]
