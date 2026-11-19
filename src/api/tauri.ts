@@ -19,6 +19,14 @@
 //   cancel_operation                                        -> null
 //   rename_profile     { profileId, name }                  -> null
 //   remove_profile     { profileId }                        -> null
+//   compare_profiles   { leftProfileId, rightProfileId }    -> Comparison
+//   list_savegames                                          -> Savegame[]
+//   savegame_report    { savegameId, profileId }            -> SavegameReport
+//   check_savegame_files { savegameId, profileId, onProgress: Channel<HashProgress> } -> SavegameReport
+//   cancel_hashing                                          -> null
+//   set_tags           { modName, tags }                    -> string[]
+//   set_note           { modName, note }                    -> null
+//   list_tags                                               -> string[]
 //
 // A failing command rejects with an ApiError object `{ code, detail }`.
 // Thumbnails are not commands: ModEntry.icon is an http://thumb.localhost/... URL served by a
@@ -29,11 +37,15 @@ import type {
   Api,
   ApiError,
   ClashChoice,
+  Comparison,
   GameStatus,
+  HashProgress,
   ModEntry,
   OpProgress,
   OpResult,
   Profile,
+  Savegame,
+  SavegameReport,
   ScanProgress,
   SwitchResult,
   TransferMode,
@@ -114,6 +126,40 @@ export function createTauriApi(): Api {
     },
     async removeProfile(profileId: string) {
       await call('remove_profile', { profileId });
+    },
+    compareProfiles(leftProfileId: string, rightProfileId: string) {
+      return call<Comparison>('compare_profiles', { leftProfileId, rightProfileId });
+    },
+    listSavegames() {
+      return call<Savegame[]>('list_savegames');
+    },
+    savegameReport(savegameId: string, profileId: string) {
+      return call<SavegameReport>('savegame_report', { savegameId, profileId });
+    },
+    checkSavegameFiles(
+      savegameId: string,
+      profileId: string,
+      onProgress?: (p: HashProgress) => void,
+    ) {
+      const channel = new Channel<HashProgress>();
+      channel.onmessage = (progress) => onProgress?.(progress);
+      return call<SavegameReport>('check_savegame_files', {
+        savegameId,
+        profileId,
+        onProgress: channel,
+      });
+    },
+    async cancelHashing() {
+      await call('cancel_hashing');
+    },
+    setTags(modName: string, tags: string[]) {
+      return call<string[]>('set_tags', { modName, tags });
+    },
+    async setNote(modName: string, note: string) {
+      await call('set_note', { modName, note });
+    },
+    listTags() {
+      return call<string[]>('list_tags');
     },
   };
 }

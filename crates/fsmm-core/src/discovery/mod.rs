@@ -358,6 +358,8 @@ pub fn game_status(probe: &dyn SystemProbe) -> GameStatus {
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct GameContext {
     pub user_dir: Option<PathBuf>,
+    /// The first game install found; its `pdlc` folder holds the installed DLCs.
+    pub install_dir: Option<PathBuf>,
     /// The folder the game currently loads mods from.
     pub effective_mods_dir: Option<PathBuf>,
     /// `<user folder>\mods`, used when no override is active.
@@ -371,10 +373,9 @@ pub struct GameContext {
 /// Gathers the [`GameContext`]. Reads `gameSettings.xml` (only the override element) and the
 /// head of `log.txt`; the language comes from the log and falls back to `en`.
 pub fn game_context(probe: &dyn SystemProbe) -> GameContext {
-    let installed = find_installs(probe)
-        .into_iter()
-        .next()
-        .and_then(|i| i.version);
+    let install = find_installs(probe).into_iter().next();
+    let install_dir = install.as_ref().map(|i| i.dir.clone());
+    let installed = install.and_then(|i| i.version);
     let user = user_dir(probe);
     let mods_override = user
         .as_ref()
@@ -395,6 +396,7 @@ pub fn game_context(probe: &dyn SystemProbe) -> GameContext {
             .as_ref()
             .and_then(|l| current_desc_version(l, installed.as_deref())),
         user_dir: user,
+        install_dir,
     }
 }
 

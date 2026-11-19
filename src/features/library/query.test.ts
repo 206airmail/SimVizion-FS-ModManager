@@ -37,6 +37,8 @@ function makeMod(overrides: Partial<ModEntry> = {}): ModEntry {
     source: { type: 'unknown' },
     update: { type: 'unknown' },
     alsoIn: [],
+    tags: [],
+    note: null,
     ...overrides,
   };
 }

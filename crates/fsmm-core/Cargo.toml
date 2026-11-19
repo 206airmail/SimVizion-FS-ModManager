@@ -13,6 +13,8 @@ bcdec_rs = "0.2.1"
 humantime = "2.4.0"
 # Reads Steam's VDF files (libraryfolders.vdf, appmanifest_*.acf) to find the game install.
 keyvalues-parser = "0.2.4"
+# MD5, the hash the game records per mod in a savegame (`fileHash` = md5(zip ++ modName), M6).
+md-5 = "0.10.6"
 # Decodes PNG mod icons and encodes thumbnails.
 png = "0.18.1"
 # Reads mods and decodes icons in parallel.

@@ -30,6 +30,8 @@ fn sample_entry(name: &str) -> ModEntry {
         source: ModSource::Unknown,
         update: UpdateState::Unknown,
         also_in: Vec::new(),
+        tags: Vec::new(),
+        note: None,
     }
 }
 

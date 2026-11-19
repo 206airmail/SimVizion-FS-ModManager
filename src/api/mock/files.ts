@@ -89,6 +89,8 @@ export function olderTwin(mod: ModEntry, profileId: string): ModEntry {
     sizeBytes: Math.round(mod.sizeBytes * 0.92),
     modified,
     alsoIn: [],
+    tags: [],
+    note: null,
   };
 }
 
