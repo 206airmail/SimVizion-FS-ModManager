@@ -3,6 +3,7 @@ import {
   Folder,
   FolderOpen,
   FolderPlus,
+  GitCompareArrows,
   HeartPulse,
   ListX,
   Pencil,
@@ -23,7 +24,7 @@ import { Menu, MenuPopup, type MenuAnchor, type MenuItem } from '../../ui/Menu';
 import { Tooltip } from '../../ui/Tooltip';
 import { RemoveProfileDialog, RenameProfileDialog } from '../files/ProfileDialogs';
 
-export type Section = 'library' | 'health' | 'savegames' | 'settings';
+export type Section = 'library' | 'health' | 'compare' | 'savegames' | 'settings';
 
 /** Below this window width the rail shows icons only. Keep in step with shell.css. */
 export const RAIL_COLLAPSE_QUERY = '(max-width: 1040px)';
@@ -34,6 +35,8 @@ export interface ProfileActions {
   rename: (profile: Profile, name: string) => Promise<void>;
   /** Removes the folder from the list and reloads. Rejects with the Api's error. */
   remove: (profile: Profile) => Promise<void>;
+  /** Opens Compare with this profile on the left. */
+  compareWith: (profile: Profile) => void;
   /** Why "Remove from list" is unavailable for this profile right now, or null. */
   removeBlockedReason: (profile: Profile) => string | null;
 }
@@ -66,6 +69,13 @@ export function ProfileRail({
   const menuItems = (profile: Profile): MenuItem[] => {
     const blocked = profileActions.removeBlockedReason(profile);
     return [
+      {
+        id: 'compare',
+        label: strings.profileMenu.compareWith,
+        icon: GitCompareArrows,
+        disabledReason: profiles.length < 2 ? strings.profileMenu.compareNeedsTwo : undefined,
+        onSelect: () => profileActions.compareWith(profile),
+      },
       {
         id: 'rename',
         label: strings.profileMenu.rename,
@@ -125,6 +135,15 @@ export function ProfileRail({
               selected={section === 'health'}
               collapsed={collapsed}
               onSelect={() => onSelectSection('health')}
+            />
+          </li>
+          <li>
+            <NavItem
+              icon={GitCompareArrows}
+              label={t.compare}
+              selected={section === 'compare'}
+              collapsed={collapsed}
+              onSelect={() => onSelectSection('compare')}
             />
           </li>
           <li>

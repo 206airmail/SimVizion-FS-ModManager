@@ -12,6 +12,7 @@ import { sourceIcons } from './labels';
 import { ModIcon } from './ModIcon';
 import type { SortDirection, SortKey } from './query';
 import { StatusMarks } from './StatusMarks';
+import { TagMark } from './TagMark';
 
 const ROW_HEIGHT = 36;
 const HEAD_HEIGHT = 32;
@@ -190,6 +191,7 @@ const ModRow = memo(function ModRow({
           {mod.title}
         </span>
         {mod.format === 'folder' && <Pill size="compact">{t.folderFormat}</Pill>}
+        <TagMark mod={mod} />
       </div>
       <div role="gridcell" className="sv-cell sv-cell--secondary sv-truncate mm-col--author">
         {mod.author}
