@@ -3,6 +3,10 @@
 // few URL switches for reviewing states:
 //   ?mock=stress  adds a 5,000-mod profile      ?mock=slow   3 s latency (loading state)
 //   ?mock=error   mod lists fail to load        ?mock=empty  every profile lists no mods
+//   ?mock=running the game is running (Set as active is disabled)
+//   ?mock=server  the dedicated server is running (Set as active is disabled)
+//   ?mock=brokenSettings  gameSettings.xml is unreadable and a backup exists; restoring fixes it
+//   ?mock=writeFails      Set as active fails with a writeFailed error
 
 import { isTauri } from '@tauri-apps/api/core';
 import type { Api } from '.';
@@ -16,6 +20,10 @@ function createApi(): Api {
     stress: mode === 'stress',
     delayMs: mode === 'slow' ? 3000 : 250,
     failMods: mode === 'error',
+    gameRunning: mode === 'running',
+    serverRunning: mode === 'server',
+    brokenSettings: mode === 'brokenSettings',
+    writeFails: mode === 'writeFails',
   });
   if (mode !== 'empty') return mock;
   // Spread drops nothing the interface needs: `sampleData` is a plain property.

@@ -29,24 +29,54 @@ export const strings = {
     folderUnreadable: 'The folder could not be read. You may not have permission to open it.',
     internal: 'Something went wrong inside the app.',
     gameRunning:
-      'Close Farming Simulator 25 first. The active folder cannot change while the game is running.',
+      'Farming Simulator 25 is running, so nothing was changed. Close the game and try again.',
     serverRunning:
-      'Stop the dedicated server first. The active folder cannot change while it is running.',
-    settingsMissing: 'gameSettings.xml was not found. Start the game once so it creates the file.',
-    settingsUnreadable: 'gameSettings.xml could not be read, so it was left untouched.',
+      'The dedicated server is running, so nothing was changed. Stop the server and try again.',
+    settingsMissing:
+      'gameSettings.xml was not found, so nothing was changed. Start the game once so it creates the file.',
+    settingsUnreadable: 'gameSettings.xml could not be read, so nothing was changed.',
     settingsChanged:
-      'gameSettings.xml changed while the app was working, so nothing was written. Try again.',
-    writeFailed: 'gameSettings.xml could not be written. The original file is unchanged.',
-    writesDisabled: 'This development build does not write game files.',
-    nothingToUndo: 'There is nothing to undo any more.',
-    noBackup: 'No backup of gameSettings.xml was found.',
+      'gameSettings.xml changed in the meantime, so nothing was written. Check which folder is active, then try again if you still want the change.',
+    writeFailed:
+      'gameSettings.xml could not be written, so the original file is unchanged. Check that the file is not read-only.',
+    writesDisabled: 'This development build does not write game files, so nothing was changed.',
+    nothingToUndo: 'There is nothing to undo any more, so nothing was changed.',
+    noBackup: 'No backup of gameSettings.xml was found, so nothing was restored.',
   } satisfies Record<ErrorCode, string>,
 
   actionFailed: {
     addFolder: 'Could not add the folder',
     openFolder: 'Could not open the folder',
     showInFolder: 'Could not show the mod in its folder',
+    setActive: 'Could not change the active folder',
+    undoSwitch: 'Could not undo the switch',
+    restoreBackup: 'Could not restore the backup',
     dismiss: 'Dismiss',
+  },
+
+  switching: {
+    busy: 'Switching…',
+    blockedGame: 'Close Farming Simulator 25 to change the active folder.',
+    blockedServer: 'Stop the dedicated server to change the active folder.',
+    doneTitle: (name: string) => `${name} is now the active folder`,
+    doneText:
+      'The game loads its mods from this folder the next time it starts. gameSettings.xml was backed up first.',
+    undo: 'Undo',
+    undoing: 'Undoing…',
+    undoneTitle: 'Switch undone',
+    undoneText: (name: string | null) =>
+      name === null
+        ? 'The previous active folder is back in place.'
+        : `${name} is the active folder again.`,
+  },
+
+  restore: {
+    title: 'gameSettings.xml could not be read',
+    text: 'The game cannot load its settings from this file. Restoring puts back the newest backup, and the unreadable file is kept as a backup too.',
+    action: (when: string) => `Restore the backup from ${when}`,
+    busy: 'Restoring…',
+    doneTitle: 'Backup restored',
+    doneText: 'gameSettings.xml was replaced with the backup and can be read again.',
   },
 
   header: {
@@ -183,7 +213,7 @@ export const strings = {
     gameRunning: 'Game is running',
     gameNotRunning: 'Game is not running',
     settingsOk: 'gameSettings.xml readable',
-    settingsMissing: 'gameSettings.xml not found',
+    settingsMissing: 'gameSettings.xml not readable',
     overrideOn: 'Mod folder override on',
     overrideOff: 'Using the game default folder',
   },
