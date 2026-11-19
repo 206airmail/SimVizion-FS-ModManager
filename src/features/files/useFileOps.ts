@@ -4,6 +4,7 @@ import { api } from '../../api/client';
 import { ApiFailure, describeError } from '../../lib/errors';
 import { strings } from '../../strings';
 import { createProgressStore, type ProgressStore } from './progress';
+import { runUpdates, type UpdateJob } from './runUpdates';
 import { emptyResult, type OpKind, type Outcome } from './summary';
 
 export interface RunningOp {
@@ -38,6 +39,11 @@ export interface FileOpsController {
     replacedNames: string[],
   ) => void;
   startRemove: (profileId: string, modIds: string[]) => void;
+  /**
+   * Downloads and installs updates, one mod after another. With one job the result is worded by
+   * folder (`folderNames` maps a profile id to its display name); with several, by mod.
+   */
+  startUpdate: (jobs: readonly UpdateJob[], folderNames: ReadonlyMap<string, string>) => void;
   cancel: () => void;
   dismiss: () => void;
 }
@@ -64,11 +70,14 @@ export function useFileOps(reload: () => Promise<Profile[] | null>): FileOpsCont
   // State lags a render behind; the ref is what stops a second start getting through.
   const busy = useRef(false);
   const outcomes = useRef(0);
+  // Cancel stops the download in flight; this also stops the jobs still waiting behind it.
+  const cancelled = useRef(false);
 
   const run = useCallback(
     async ({ kind, target, replaced, call }: Run) => {
       if (busy.current) return;
       busy.current = true;
+      cancelled.current = false;
       progress.set(null);
       setOutcome(null);
       setFailure(null);
@@ -127,7 +136,26 @@ export function useFileOps(reload: () => Promise<Profile[] | null>): FileOpsCont
     [run],
   );
 
+  const startUpdate = useCallback<FileOpsController['startUpdate']>(
+    (jobs, folderNames) =>
+      void run({
+        kind: 'update',
+        target: jobs.length === 1 ? (jobs[0]?.modName ?? null) : null,
+        replaced: [],
+        call: (onProgress) =>
+          runUpdates(
+            (name, ids, report) => api.installUpdate(name, ids, report),
+            jobs,
+            folderNames,
+            onProgress,
+            () => cancelled.current,
+          ),
+      }),
+    [run],
+  );
+
   const cancel = useCallback(() => {
+    cancelled.current = true;
     setRunning((current) => current && { ...current, cancelling: true });
     api.cancelOperation().catch((error: unknown) =>
       setFailure({
@@ -150,9 +178,21 @@ export function useFileOps(reload: () => Promise<Profile[] | null>): FileOpsCont
       progress,
       startTransfer,
       startRemove,
+      startUpdate,
       cancel,
       dismiss,
     }),
-    [running, outcome, failure, revision, progress, startTransfer, startRemove, cancel, dismiss],
+    [
+      running,
+      outcome,
+      failure,
+      revision,
+      progress,
+      startTransfer,
+      startRemove,
+      startUpdate,
+      cancel,
+      dismiss,
+    ],
   );
 }

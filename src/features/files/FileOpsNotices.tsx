@@ -1,4 +1,4 @@
-import { Copy, FolderInput, Trash2, type LucideIcon } from 'lucide-react';
+import { Copy, Download, FolderInput, Trash2, type LucideIcon } from 'lucide-react';
 import { useState, useSyncExternalStore } from 'react';
 import { formatBytes } from '../../lib/format';
 import { strings } from '../../strings';
@@ -14,10 +14,11 @@ const kindIcons: Record<OpKind, LucideIcon> = {
   copy: Copy,
   move: FolderInput,
   remove: Trash2,
+  update: Download,
 };
 
 /**
- * App-level notices for copy, move and remove: the progress (with Cancel) while one runs, the
+ * App-level notices for copy, move, remove and update: the progress (with Cancel) while one runs, the
  * reason one failed as a whole, and the summary of how the last one ended. They sit above the
  * screens, so the user can keep browsing while a long copy runs.
  */

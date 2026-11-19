@@ -356,8 +356,8 @@ describe('mock dataset', () => {
     'descVersionMismatch',
     'missingDependency',
   ];
-  const api: Api = createMockApi({ delayMs: 0 });
-  const stressApi: Api = createMockApi({ delayMs: 0, stress: true });
+  const api: Api = createMockApi({ delayMs: 0, updatesOn: true });
+  const stressApi: Api = createMockApi({ delayMs: 0, stress: true, updatesOn: true });
   let profiles: Profile[] = [];
   let mods: Record<string, ModEntry[]> = {};
   let stressProfiles: Profile[] = [];
@@ -446,7 +446,7 @@ describe('mock dataset', () => {
   });
 
   it('is deterministic', async () => {
-    const other = createMockApi({ delayMs: 0 });
+    const other = createMockApi({ delayMs: 0, updatesOn: true });
     expect(await other.listProfiles()).toEqual(profiles);
     for (const profile of profiles) {
       expect(await other.listMods(profile.id)).toEqual(mods[profile.id]);
