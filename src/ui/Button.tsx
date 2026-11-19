@@ -35,7 +35,7 @@ export function Button({
       )}
       {...rest}
     >
-      {icon && <Icon icon={icon} size={size === 'compact' ? 14 : 16} />}
+      {icon && <Icon icon={icon} size={size === 'compact' ? 16 : 18} />}
       {children}
     </button>
   );
@@ -73,7 +73,7 @@ export function IconButton({
         )}
         {...rest}
       >
-        <Icon icon={icon} size={size === 'compact' ? 14 : 16} />
+        <Icon icon={icon} size={size === 'compact' ? 16 : 18} />
       </button>
     </Tooltip>
   );

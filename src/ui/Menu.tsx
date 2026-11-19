@@ -171,7 +171,7 @@ export function MenuPopup({ id, label, items, anchor, onClose }: MenuPopupProps)
             onClick={() => choose(item)}
             onPointerMove={(event) => event.currentTarget.focus({ preventScroll: true })}
           >
-            {item.icon && <Icon icon={item.icon} size={14} />}
+            {item.icon && <Icon icon={item.icon} size={16} />}
             <span className="sv-menu__label">{item.label}</span>
           </button>
         );
@@ -256,7 +256,7 @@ export function Menu({
         }
       }}
     >
-      <Icon icon={icon} size={size === 'compact' ? 14 : 16} />
+      <Icon icon={icon} size={size === 'compact' ? 16 : 18} />
       {text}
     </button>
   );

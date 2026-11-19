@@ -245,13 +245,13 @@ function ProfileItem({ profile, selected, collapsed, menuItems, onSelect }: Prof
             <span className="mm-profile__marks sv-num">
               {profile.issueCount > 0 && (
                 <span className="mm-profile__mark" title={t.issues(profile.issueCount)}>
-                  <Icon icon={TriangleAlert} size={12} className="sv-tone-warning" />
+                  <Icon icon={TriangleAlert} size={14} className="sv-tone-warning" />
                   {formatCount(profile.issueCount)}
                 </span>
               )}
               {profile.updateCount > 0 && (
                 <span className="mm-profile__mark" title={t.updates(profile.updateCount)}>
-                  <Icon icon={CircleArrowUp} size={12} className="sv-tone-info" />
+                  <Icon icon={CircleArrowUp} size={14} className="sv-tone-info" />
                   {formatCount(profile.updateCount)}
                 </span>
               )}

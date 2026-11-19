@@ -156,7 +156,8 @@
   flex: 1;
   min-width: 0;
   height: 100%;
-  padding: 0 28px;
+  /* Left: the 8px inset, the 16px icon and a 6px gap. */
+  padding: 0 28px 0 30px;
   border: 0;
   outline: none;
   background: transparent;

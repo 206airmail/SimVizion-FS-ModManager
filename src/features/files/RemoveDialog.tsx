@@ -56,7 +56,7 @@ export function RemoveDialog({ mods, profileName, onClose, onConfirm }: RemoveDi
       <p>{t.recycle}</p>
       <p>{t.leftInPlace}</p>
       <p className="mm-confirm__note">
-        <Icon icon={Info} size={14} className="sv-tone-info" />
+        <Icon icon={Info} size={16} className="sv-tone-info" />
         {t.synced}
       </p>
     </Dialog>

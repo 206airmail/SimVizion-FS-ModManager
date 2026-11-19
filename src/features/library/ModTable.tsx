@@ -147,7 +147,7 @@ export function ModTable(props: ModTableProps) {
 
 function SortArrow({ descending }: { descending: boolean }) {
   return (
-    <Icon icon={descending ? ArrowDown : ArrowUp} size={14} className="sv-table__sort-arrow" />
+    <Icon icon={descending ? ArrowDown : ArrowUp} size={16} className="sv-table__sort-arrow" />
   );
 }
 
@@ -206,7 +206,7 @@ const ModRow = memo(function ModRow({
       <div role="gridcell" className="sv-cell sv-cell--secondary mm-col--source mm-modrow__source">
         {SourceIcon ? (
           <>
-            <Icon icon={SourceIcon} size={14} />
+            <Icon icon={SourceIcon} size={16} />
             <span className="sv-truncate">{strings.sources[mod.source.type]}</span>
           </>
         ) : (
