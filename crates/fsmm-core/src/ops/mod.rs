@@ -148,18 +148,19 @@ pub fn read_override(bytes: &[u8]) -> Result<ModsOverride, OpError> {
 
 // ---------------------------------------------------------------------------- patching
 
-/// Escapes a value for use inside an attribute, whichever quote delimits it. Line breaks and
+/// Escapes a value for an attribute delimited by `quote`. Only that quote is escaped, so a
+/// path such as `John's Mods` inside double quotes round-trips byte for byte. Line breaks and
 /// tabs become character references because attribute-value normalisation would otherwise
 /// turn them into spaces.
-fn escape_attr(value: &str) -> String {
+fn escape_attr(value: &str, quote: u8) -> String {
     let mut out = String::with_capacity(value.len());
     for c in value.chars() {
         match c {
             '&' => out.push_str("&amp;"),
             '<' => out.push_str("&lt;"),
             '>' => out.push_str("&gt;"),
-            '"' => out.push_str("&quot;"),
-            '\'' => out.push_str("&apos;"),
+            '"' if quote == b'"' => out.push_str("&quot;"),
+            '\'' if quote == b'\'' => out.push_str("&apos;"),
             '\n' => out.push_str("&#10;"),
             '\r' => out.push_str("&#13;"),
             '\t' => out.push_str("&#9;"),
@@ -177,12 +178,12 @@ fn bool_text(value: bool) -> &'static str {
     }
 }
 
-fn directory_text(dir: Option<&Path>) -> Result<String, OpError> {
+fn directory_text(dir: Option<&Path>, quote: u8) -> Result<String, OpError> {
     match dir {
         None => Ok(String::new()),
         Some(d) => d
             .to_str()
-            .map(escape_attr)
+            .map(|v| escape_attr(v, quote))
             .ok_or_else(|| step_failed("path")),
     }
 }
@@ -191,7 +192,7 @@ fn canonical_element(wanted: &ModsOverride) -> Result<String, OpError> {
     Ok(format!(
         "<{ELEMENT} active=\"{}\" directory=\"{}\"/>",
         bool_text(wanted.active),
-        directory_text(wanted.directory.as_deref())?
+        directory_text(wanted.directory.as_deref(), b'"')?
     ))
 }
 
@@ -297,10 +298,9 @@ pub fn patch_override(bytes: &[u8], target: &ModsOverride) -> Result<Vec<u8>, Op
                     ));
                 }
                 if current.directory != wanted.directory {
-                    edits.push((
-                        value_range(text, &directory)?,
-                        directory_text(wanted.directory.as_deref())?,
-                    ));
+                    let range = value_range(text, &directory)?;
+                    let quote = text.as_bytes()[range.start - 1];
+                    edits.push((range, directory_text(wanted.directory.as_deref(), quote)?));
                 }
             }
             _ => edits.push((node.range(), canonical_element(&wanted)?)),
@@ -489,10 +489,14 @@ pub fn backup(bytes: &[u8], dir: &Path, keep: usize) -> Result<String, OpError> 
     Ok(name)
 }
 
-/// The newest backup in `dir` (by name) and its time, taken from the name, else the file's
-/// modification time.
+/// The newest backup in `dir` (by name) that is readable settings, and its time, taken from
+/// the name, else the file's modification time. Unreadable backups are skipped: restoring
+/// backs up the broken file first, and that copy must never become the restore source.
 pub fn latest_backup(dir: &Path) -> Option<(PathBuf, SystemTime)> {
-    let (name, path) = backups_in(dir).pop()?;
+    let (name, path) = backups_in(dir)
+        .into_iter()
+        .rev()
+        .find(|(_, path)| fs::read(path).is_ok_and(|bytes| read_override(&bytes).is_ok()))?;
     let from_name = name.strip_prefix(BACKUP_PREFIX).and_then(time_of_stamp);
     let time = from_name
         .or_else(|| fs::metadata(&path).and_then(|m| m.modified()).ok())

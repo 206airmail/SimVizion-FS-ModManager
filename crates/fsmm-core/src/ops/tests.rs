@@ -256,22 +256,42 @@ fn single_quotes_and_attribute_order_are_kept() {
 #[test]
 fn special_characters_in_a_path_are_escaped_and_read_back() {
     let path = r#"D:\Me & You\<a>\"q" it's"#;
-    for line in [
-        "    <modsDirectoryOverride active=\"true\" directory=\"D:\\a\"/>",
-        "    <modsDirectoryOverride active='true' directory='D:\\a'/>",
+    // Only the quote that delimits the value is escaped.
+    for (line, double_quote, apostrophe) in [
+        (
+            "    <modsDirectoryOverride active=\"true\" directory=\"D:\\a\"/>",
+            "&quot;q&quot;",
+            "it's",
+        ),
+        (
+            "    <modsDirectoryOverride active='true' directory='D:\\a'/>",
+            "\"q\"",
+            "it&apos;s",
+        ),
     ] {
         let original = with_bom(&settings_text(line, "\n"));
         let patched = patch_override(&original, &state(true, Some(path))).unwrap();
         let text = text_of(&patched);
         assert!(text.contains("&amp;"));
         assert!(text.contains("&lt;a&gt;"));
-        assert!(text.contains("&quot;q&quot;"));
-        assert!(text.contains("it&apos;s"));
+        assert!(text.contains(double_quote));
+        assert!(text.contains(apostrophe));
         assert_eq!(read_override(&patched).unwrap(), state(true, Some(path)));
         // Everything but the directory value is untouched.
         let start = text_of(&original).find("directory=").unwrap() + "directory=\"".len();
         assert_confined(&original, &patched, start..start + 4);
     }
+}
+
+#[test]
+fn an_apostrophe_in_a_double_quoted_path_round_trips_byte_identically() {
+    let original = with_bom(&settings_text(
+        &override_line("true", r"D:\John's Mods"),
+        "\n",
+    ));
+    let away = patch_override(&original, &state(true, Some(r"D:\b"))).unwrap();
+    let back = patch_override(&away, &state(true, Some(r"D:\John's Mods"))).unwrap();
+    assert_eq!(back, original);
 }
 
 #[test]
@@ -453,8 +473,9 @@ fn backup_writes_a_named_copy_and_creates_the_folder() {
 fn rapid_backups_get_distinct_names_in_creation_order() {
     let tmp = tempfile::tempdir().unwrap();
     let mut made = Vec::new();
+    let content = |i: u8| settings_text(&override_line("true", &format!("D:\\{i}")), "\n");
     for i in 0..30u8 {
-        made.push(backup(&[i], tmp.path(), 100).unwrap());
+        made.push(backup(content(i).as_bytes(), tmp.path(), 100).unwrap());
     }
     let mut sorted = made.clone();
     sorted.sort();
@@ -466,7 +487,7 @@ fn rapid_backups_get_distinct_names_in_creation_order() {
 
     let (latest, _) = latest_backup(tmp.path()).unwrap();
     assert_eq!(latest.file_name().unwrap().to_str().unwrap(), made[29]);
-    assert_eq!(fs::read(latest).unwrap(), vec![29u8]);
+    assert_eq!(fs::read(latest).unwrap(), content(29).into_bytes());
 }
 
 #[test]
@@ -515,29 +536,32 @@ fn retention_of_twenty_keeps_the_newest_twenty() {
 }
 
 #[test]
-fn latest_backup_is_the_newest_by_name_with_its_time() {
+fn latest_backup_is_the_newest_readable_by_name_with_its_time() {
     let tmp = tempfile::tempdir().unwrap();
     assert!(latest_backup(tmp.path()).is_none());
     assert!(latest_backup(&tmp.path().join("missing")).is_none());
 
+    let content = |dir: &str| settings_text(&override_line("true", dir), "\n");
+    for (stamp, dir) in [
+        ("20240101T000000000Z", "D:\\a"),
+        ("20240301T120000500Z", "D:\\b"),
+        ("20240201T000000000Z", "D:\\c"),
+    ] {
+        fs::write(
+            tmp.path().join(format!("gameSettings-{stamp}.xml")),
+            content(dir),
+        )
+        .unwrap();
+    }
+    fs::write(tmp.path().join("zzz.xml"), content("D:\\d")).unwrap();
+    // Newer than every readable backup, but not settings: skipped.
     fs::write(
-        tmp.path().join("gameSettings-20240101T000000000Z.xml"),
-        b"a",
+        tmp.path().join("gameSettings-20250101T000000000Z.xml"),
+        b"<broken",
     )
     .unwrap();
-    fs::write(
-        tmp.path().join("gameSettings-20240301T120000500Z.xml"),
-        b"b",
-    )
-    .unwrap();
-    fs::write(
-        tmp.path().join("gameSettings-20240201T000000000Z.xml"),
-        b"c",
-    )
-    .unwrap();
-    fs::write(tmp.path().join("zzz.xml"), b"d").unwrap();
     let (path, time) = latest_backup(tmp.path()).unwrap();
-    assert_eq!(fs::read(path).unwrap(), b"b");
+    assert_eq!(fs::read(path).unwrap(), content("D:\\b").into_bytes());
     assert_eq!(time_of_stamp("20240301T120000500Z"), Some(time));
 }
 
