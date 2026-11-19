@@ -3,10 +3,13 @@
 
 mod commands;
 mod insight;
+mod release;
 mod switching;
 mod thumbs;
 mod transfer;
 mod updates;
+#[cfg(test)]
+mod version_sync;
 
 use std::fs;
 use std::path::PathBuf;
@@ -36,8 +39,11 @@ fn main() {
                 &data_dir.join("library.sqlite"),
                 &cache_dir.join("cache.sqlite"),
             )?;
+            let library = Arc::new(Library::new(store, thumbs::BASE_URL));
+            // The game folder the user chose (plan M8) applies from the first command on.
+            release::set_chosen(library.chosen_game_folder()?);
             app.manage(AppState {
-                library: Arc::new(Library::new(store, thumbs::BASE_URL)),
+                library,
                 backups_dir: data_dir.join("backups"),
             });
             Ok(())
@@ -75,6 +81,14 @@ fn main() {
             updates::install_update,
             updates::open_mod_link,
             updates::set_source_link,
+            release::launch_game,
+            release::health_report,
+            release::choose_game_folder,
+            release::clear_game_folder,
+            release::get_app_update_settings,
+            release::set_app_updates_enabled,
+            release::check_app_update,
+            release::install_app_update,
         ])
         .run(tauri::generate_context!())
         .expect("error while running SimVizion Mod Manager");

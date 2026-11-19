@@ -1,10 +1,13 @@
 import type {
   Api,
+  AppUpdate,
+  AppUpdateSettings,
   ClashChoice,
   Comparison,
   ErrorCode,
   GameStatus,
   HashProgress,
+  HealthReport,
   LinkKind,
   ModEntry,
   OpProgress,
@@ -862,6 +865,38 @@ export function createMockApi(options: MockOptions = {}): Api {
       if (url === null) throw new ApiFailure('folderMissing');
       onOpenLink?.(url, kind);
     },
+    // Plan M8 stubs; WS-C builds the mock behaviour.
+    async launchGame(): Promise<void> {
+      await wait();
+      throw new ApiFailure('internal', 'notImplemented');
+    },
+    async healthReport(): Promise<HealthReport> {
+      await wait();
+      throw new ApiFailure('internal', 'notImplemented');
+    },
+    async chooseGameFolder(): Promise<GameStatus | null> {
+      await wait();
+      return null;
+    },
+    async clearGameFolder(): Promise<GameStatus> {
+      return this.getGameStatus();
+    },
+    async getAppUpdateSettings(): Promise<AppUpdateSettings> {
+      await wait();
+      return { enabled: false, lastCheck: null };
+    },
+    async setAppUpdatesEnabled(enabled: boolean): Promise<AppUpdateSettings> {
+      await wait();
+      return { enabled, lastCheck: null };
+    },
+    async checkAppUpdate(): Promise<AppUpdate | null> {
+      await wait();
+      throw new ApiFailure('updatesDisabled');
+    },
+    async installAppUpdate(): Promise<void> {
+      await wait();
+      throw new ApiFailure('internal', 'notImplemented');
+    },
     async setSourceLink(modName: string, url: string | null): Promise<string | null> {
       await wait();
       const key = nameKey(modName);
@@ -886,6 +921,10 @@ export function createMockApi(options: MockOptions = {}): Api {
         overrideActive,
         effectiveModsDir: settingsBroken ? null : pathOf(activeId),
         loggedDescVersion: GAME_DESC_VERSION,
+        store: 'steam',
+        launchable: true,
+        userDirSource: 'detected',
+        userDir: MODS_ROOT,
       };
     },
     async listProfiles(): Promise<Profile[]> {

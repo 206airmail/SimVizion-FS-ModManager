@@ -10,7 +10,7 @@ use std::io;
 use std::path::{Path, PathBuf};
 
 use crate::container::ModContainer;
-use crate::model::GameStatus;
+use crate::model::{ApiError, GameStatus, GameStore, UserDirSource};
 
 mod gamelog;
 mod settings;
@@ -42,6 +42,8 @@ pub trait SystemProbe {
     fn documents_dir(&self) -> Option<PathBuf>;
     /// `%ProgramData%`, where the Epic launcher keeps its manifests.
     fn program_data_dir(&self) -> Option<PathBuf>;
+    /// `%LOCALAPPDATA%`, where Microsoft Store apps keep their data (`Packages<package>`).
+    fn local_app_data_dir(&self) -> Option<PathBuf>;
 }
 
 #[cfg(windows)]
@@ -54,6 +56,19 @@ pub enum Store {
     Steam,
     Giants,
     Epic,
+    /// Plan M8: detected from the package registration; not verified on a real install.
+    MicrosoftStore,
+}
+
+impl Store {
+    pub fn to_model(self) -> GameStore {
+        match self {
+            Store::Steam => GameStore::Steam,
+            Store::Giants => GameStore::Giants,
+            Store::Epic => GameStore::Epic,
+            Store::MicrosoftStore => GameStore::MicrosoftStore,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -62,6 +77,34 @@ pub struct GameInstall {
     pub dir: PathBuf,
     /// Contents of the install's `VERSION` file, trimmed.
     pub version: Option<String>,
+    /// What the store launches the game by: Epic's `AppName`, or the Microsoft Store app's
+    /// `<PackageFamilyName>!<AppId>`. `None` for Steam and GIANTS.
+    pub launch_id: Option<String>,
+}
+
+/// How "Launch game" starts an install (plan M8). Built here from the detected install; the
+/// frontend never sends a URL or a path.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum LaunchTarget {
+    /// A store URL opened with the default handler: `steam://rungameid/2300320`, or Epic's
+    /// `com.epicgames.launcher://apps/<AppName>?action=launch&silent=true`.
+    Url(String),
+    /// The game's exe, started with its install folder as the working directory (GIANTS).
+    Program { exe: PathBuf, dir: PathBuf },
+    /// A Microsoft Store app, started as `explorer.exe shell:AppsFolder<id>`.
+    AppsFolder(String),
+}
+
+/// What "Launch game" would start: the first install found. `GameRunning` while the game runs,
+/// `NotLaunchable` when nothing was found (or the install lacks what its store needs).
+pub fn launch_target(_probe: &dyn SystemProbe) -> Result<LaunchTarget, ApiError> {
+    todo!("WS-A")
+}
+
+/// Whether a folder the user chose can be the game's user folder: it holds
+/// `gameSettings.xml` or a `mods` folder.
+pub fn valid_game_folder(_dir: &Path) -> bool {
+    todo!("WS-A")
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -131,6 +174,7 @@ pub fn find_installs(probe: &dyn SystemProbe) -> Vec<GameInstall> {
             store,
             dir,
             version,
+            launch_id: None,
         });
     }
     installs
@@ -327,13 +371,14 @@ fn holds_a_mod(folder: &Path) -> bool {
 
 /// Assembles the frontend's [`GameStatus`]. `logged_desc_version` is only set when the
 /// log was written by the installed game version (plan decision 2).
-pub fn game_status(probe: &dyn SystemProbe) -> GameStatus {
-    let game_version = find_installs(probe)
-        .into_iter()
-        .next()
-        .and_then(|i| i.version);
+/// `chosen` is the user folder the user picked (plan M8); it wins over detection.
+pub fn game_status(probe: &dyn SystemProbe, chosen: Option<&Path>) -> GameStatus {
+    let install = find_installs(probe).into_iter().next();
+    let store = install.as_ref().map(|i| i.store.to_model());
+    let launchable = install.is_some();
+    let game_version = install.and_then(|i| i.version);
     let run = running(probe);
-    let user = user_dir(probe);
+    let (user, user_dir_source) = resolve_user_dir(probe, chosen);
     let mods_override = user
         .as_ref()
         .and_then(|u| read_mods_override(&u.join("gameSettings.xml")).ok());
@@ -351,6 +396,25 @@ pub fn game_status(probe: &dyn SystemProbe) -> GameStatus {
         override_active: mods_override.as_ref().is_some_and(|o| o.active),
         effective_mods_dir: effective_mods_dir(user.as_deref(), mods_override.as_ref())
             .map(|p| p.to_string_lossy().into_owned()),
+        store,
+        launchable,
+        user_dir_source,
+        user_dir: user.map(|u| u.to_string_lossy().into_owned()),
+    }
+}
+
+/// The user folder and how it was found: the chosen one, else detection ([`user_dir`]).
+/// WS-A adds the Microsoft Store package folder as a fallback.
+fn resolve_user_dir(
+    probe: &dyn SystemProbe,
+    chosen: Option<&Path>,
+) -> (Option<PathBuf>, UserDirSource) {
+    if let Some(dir) = chosen {
+        return (Some(dir.to_path_buf()), UserDirSource::Chosen);
+    }
+    match user_dir(probe) {
+        Some(dir) => (Some(dir), UserDirSource::Detected),
+        None => (None, UserDirSource::None),
     }
 }
 
@@ -371,12 +435,13 @@ pub struct GameContext {
 }
 
 /// Gathers the [`GameContext`]. Reads `gameSettings.xml` (only the override element) and the
-/// head of `log.txt`; the language comes from the log and falls back to `en`.
-pub fn game_context(probe: &dyn SystemProbe) -> GameContext {
+/// head of `log.txt`; the language comes from the log and falls back to `en`. `chosen` as in
+/// [`game_status`].
+pub fn game_context(probe: &dyn SystemProbe, chosen: Option<&Path>) -> GameContext {
     let install = find_installs(probe).into_iter().next();
     let install_dir = install.as_ref().map(|i| i.dir.clone());
     let installed = install.and_then(|i| i.version);
-    let user = user_dir(probe);
+    let (user, _) = resolve_user_dir(probe, chosen);
     let mods_override = user
         .as_ref()
         .and_then(|u| read_mods_override(&u.join("gameSettings.xml")).ok());

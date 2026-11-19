@@ -34,6 +34,14 @@
 //   install_update     { modName, profileIds, onProgress: Channel<OpProgress> } -> OpResult
 //   open_mod_link      { modName, kind }                    -> null
 //   set_source_link    { modName, url }                     -> string | null
+//   launch_game                                             -> null
+//   health_report                                           -> HealthReport
+//   choose_game_folder                                      -> GameStatus | null
+//   clear_game_folder                                       -> GameStatus
+//   get_app_update_settings                                 -> AppUpdateSettings
+//   set_app_updates_enabled { enabled }                     -> AppUpdateSettings
+//   check_app_update   { force }                            -> AppUpdate | null
+//   install_app_update { onProgress: Channel<OpProgress> }  -> null (the app restarts)
 //
 // A failing command rejects with an ApiError object `{ code, detail }`.
 // Thumbnails are not commands: ModEntry.icon is an http://thumb.localhost/... URL served by a
@@ -43,10 +51,13 @@ import { Channel, invoke } from '@tauri-apps/api/core';
 import type {
   Api,
   ApiError,
+  AppUpdate,
+  AppUpdateSettings,
   ClashChoice,
   Comparison,
   GameStatus,
   HashProgress,
+  HealthReport,
   LinkKind,
   ModEntry,
   OpProgress,
@@ -194,6 +205,32 @@ export function createTauriApi(): Api {
     },
     setSourceLink(modName: string, url: string | null) {
       return call<string | null>('set_source_link', { modName, url });
+    },
+    async launchGame() {
+      await call('launch_game');
+    },
+    healthReport() {
+      return call<HealthReport>('health_report');
+    },
+    chooseGameFolder() {
+      return call<GameStatus | null>('choose_game_folder');
+    },
+    clearGameFolder() {
+      return call<GameStatus>('clear_game_folder');
+    },
+    getAppUpdateSettings() {
+      return call<AppUpdateSettings>('get_app_update_settings');
+    },
+    setAppUpdatesEnabled(enabled: boolean) {
+      return call<AppUpdateSettings>('set_app_updates_enabled', { enabled });
+    },
+    checkAppUpdate(force: boolean) {
+      return call<AppUpdate | null>('check_app_update', { force });
+    },
+    async installAppUpdate(onProgress?: (p: OpProgress) => void) {
+      const channel = new Channel<OpProgress>();
+      channel.onmessage = (progress) => onProgress?.(progress);
+      await call('install_app_update', { onProgress: channel });
     },
   };
 }

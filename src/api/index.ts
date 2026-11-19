@@ -19,8 +19,18 @@ import type { TransferPlan } from './types/TransferPlan';
 import type { UpdateCheck } from './types/UpdateCheck';
 import type { UpdatePlan } from './types/UpdatePlan';
 import type { UpdateSettings } from './types/UpdateSettings';
+import type { AppUpdate } from './types/AppUpdate';
+import type { AppUpdateSettings } from './types/AppUpdateSettings';
+import type { HealthReport } from './types/HealthReport';
 
 export type { ApiError } from './types/ApiError';
+export type { AppUpdate } from './types/AppUpdate';
+export type { AppUpdateSettings } from './types/AppUpdateSettings';
+export type { GameStore } from './types/GameStore';
+export type { HealthCount } from './types/HealthCount';
+export type { HealthReport } from './types/HealthReport';
+export type { HealthRow } from './types/HealthRow';
+export type { UserDirSource } from './types/UserDirSource';
 export type { ClashChoice } from './types/ClashChoice';
 export type { CompareRow } from './types/CompareRow';
 export type { CompareSide } from './types/CompareSide';
@@ -159,4 +169,29 @@ export interface Api {
   openModLink(modName: string, kind: LinkKind): Promise<void>;
   /** Sets (or clears with null) the user's source link; returns its host. */
   setSourceLink(modName: string, url: string | null): Promise<string | null>;
+  /**
+   * Starts the detected game install (Steam, Epic, GIANTS or Microsoft Store). Rejects with
+   * `gameRunning` or `notLaunchable`.
+   */
+  launchGame(): Promise<void>;
+  /** Every mod with issues in every folder, with per-kind counts (the Health screen). */
+  healthReport(): Promise<HealthReport>;
+  /**
+   * Asks for the game's user folder with the native picker and stores it (it overrides
+   * detection). Null when cancelled; rejects with `invalidGameFolder`. Returns the new status.
+   */
+  chooseGameFolder(): Promise<GameStatus | null>;
+  /** Forgets the chosen game folder, so detection decides again. */
+  clearGameFolder(): Promise<GameStatus>;
+  /** The app's own update settings; off by default. */
+  getAppUpdateSettings(): Promise<AppUpdateSettings>;
+  setAppUpdatesEnabled(enabled: boolean): Promise<AppUpdateSettings>;
+  /**
+   * Asks the release feed for a newer app version (null when up to date). Without `force`,
+   * nothing is asked within 24 hours of the last check (null). Rejects with `updatesDisabled`
+   * when off, `appUpdateFailed` otherwise.
+   */
+  checkAppUpdate(force: boolean): Promise<AppUpdate | null>;
+  /** Downloads and verifies the update found, runs its installer and restarts the app. */
+  installAppUpdate(onProgress?: (progress: OpProgress) => void): Promise<void>;
 }

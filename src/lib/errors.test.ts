@@ -32,6 +32,9 @@ const allCodes: Record<ErrorCode, true> = {
   verifyFailed: true,
   notInstallable: true,
   invalidLink: true,
+  notLaunchable: true,
+  invalidGameFolder: true,
+  appUpdateFailed: true,
   internal: true,
 };
 const codes = Object.keys(allCodes) as ErrorCode[];

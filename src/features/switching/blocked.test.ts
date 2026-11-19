@@ -11,6 +11,10 @@ const idle: GameStatus = {
   overrideActive: true,
   effectiveModsDir: null,
   loggedDescVersion: 106,
+  store: 'steam',
+  launchable: true,
+  userDirSource: 'detected',
+  userDir: null,
 };
 
 describe('switchBlockedReason', () => {

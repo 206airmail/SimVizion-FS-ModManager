@@ -33,11 +33,13 @@ mod compare;
 #[cfg(test)]
 mod fixtures;
 mod meta;
+mod release;
 mod savegames;
 mod switching;
 mod transfer;
 mod updates;
 
+pub use release::{app_update_due, APP_UPDATE_INTERVAL};
 pub use transfer::OpEnv;
 pub use updates::UpdateEnv;
 #[cfg(test)]

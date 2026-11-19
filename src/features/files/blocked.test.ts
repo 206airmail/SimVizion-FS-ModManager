@@ -12,6 +12,10 @@ const game = (overrides: Partial<GameStatus> = {}): GameStatus => ({
   overrideActive: true,
   effectiveModsDir: null,
   loggedDescVersion: null,
+  store: 'steam',
+  launchable: true,
+  userDirSource: 'detected',
+  userDir: null,
   ...overrides,
 });
 

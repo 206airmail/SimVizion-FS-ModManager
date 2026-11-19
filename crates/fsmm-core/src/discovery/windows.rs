@@ -68,4 +68,7 @@ impl SystemProbe for WindowsProbe {
     fn program_data_dir(&self) -> Option<PathBuf> {
         std::env::var_os("ProgramData").map(PathBuf::from)
     }
+    fn local_app_data_dir(&self) -> Option<PathBuf> {
+        dirs::data_local_dir()
+    }
 }
