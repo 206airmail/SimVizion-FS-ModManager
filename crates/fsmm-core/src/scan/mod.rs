@@ -159,6 +159,7 @@ pub fn read_mod(entry: &FolderEntry, profile_id: &str, languages: &[&str]) -> Mo
         also_in: Vec::new(),
         tags: Vec::new(),
         note: None,
+        links: Vec::new(),
     };
     let mut icon = None;
     let mut fingerprint = String::new();

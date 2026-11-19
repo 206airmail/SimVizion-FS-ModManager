@@ -45,3 +45,13 @@ pub fn game_md5(
     hasher.update(mod_name.as_bytes());
     Ok(format!("{:x}", hasher.finalize()))
 }
+
+/// Plain SHA-256 of a file, lower-case hex: the whole-zip hash the update catalog uses
+/// (`by-hash`, `archiveSha256`, plan M7). Streams like [`game_md5`]; checks `cancel` per chunk.
+pub fn sha256(
+    _path: &Path,
+    _progress: &mut dyn FnMut(u64),
+    _cancel: &AtomicBool,
+) -> Result<String, FileOpError> {
+    todo!("WS-A")
+}

@@ -36,8 +36,10 @@ mod meta;
 mod savegames;
 mod switching;
 mod transfer;
+mod updates;
 
 pub use transfer::OpEnv;
+pub use updates::UpdateEnv;
 #[cfg(test)]
 mod tests;
 

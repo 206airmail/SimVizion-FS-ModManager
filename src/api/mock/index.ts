@@ -14,6 +14,9 @@ import type {
   SwitchResult,
   TransferMode,
   TransferPlan,
+  UpdateCheck,
+  UpdatePlan,
+  UpdateSettings,
 } from '..';
 import { validateProfileName } from '../../lib/profileName';
 import { ApiFailure } from '../../lib/errors';
@@ -661,6 +664,28 @@ export function createMockApi(options: MockOptions = {}): Api {
     async listTags(): Promise<string[]> {
       await wait();
       return allTags(meta);
+    },
+    // Plan M7: implemented by WS-C.
+    async getUpdateSettings(): Promise<UpdateSettings> {
+      return { enabled: false, lastCheck: null, retryAfter: null };
+    },
+    async setUpdatesEnabled(): Promise<UpdateSettings> {
+      throw new ApiFailure('internal', 'notImplemented');
+    },
+    async checkForUpdates(): Promise<UpdateCheck> {
+      throw new ApiFailure('updatesDisabled');
+    },
+    async planUpdate(): Promise<UpdatePlan> {
+      throw new ApiFailure('internal', 'notImplemented');
+    },
+    async installUpdate(): Promise<OpResult> {
+      throw new ApiFailure('internal', 'notImplemented');
+    },
+    async openModLink(): Promise<void> {
+      throw new ApiFailure('internal', 'notImplemented');
+    },
+    async setSourceLink(): Promise<string | null> {
+      throw new ApiFailure('internal', 'notImplemented');
     },
     async getGameStatus(): Promise<GameStatus> {
       await wait();

@@ -16,7 +16,7 @@ fn running() -> Running {
     discovery::running(&WindowsProbe)
 }
 
-fn env() -> OpEnv<'static> {
+pub(crate) fn env() -> OpEnv<'static> {
     OpEnv {
         running: &running,
         recycler: &WindowsRecycler,

@@ -26,6 +26,12 @@ const allCodes: Record<ErrorCode, true> = {
   cannotRemoveProfile: true,
   savegameMissing: true,
   savegameUnreadable: true,
+  offline: true,
+  rateLimited: true,
+  updatesDisabled: true,
+  verifyFailed: true,
+  notInstallable: true,
+  invalidLink: true,
   internal: true,
 };
 const codes = Object.keys(allCodes) as ErrorCode[];
