@@ -9,6 +9,8 @@ use tempfile::TempDir;
 use super::*;
 use crate::testutil::{write_zip, Method};
 
+mod launch;
+
 const STEAM_USER_KEY: &str = r"Software\Valve\Steam";
 const STEAM_MACHINE_KEY: &str = r"SOFTWARE\WOW6432Node\Valve\Steam";
 const UNINSTALL: &str = r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall";
@@ -22,6 +24,7 @@ struct FakeProbe {
     processes: Vec<String>,
     documents: Option<PathBuf>,
     program_data: Option<PathBuf>,
+    local_app_data: Option<PathBuf>,
 }
 
 impl FakeProbe {
@@ -66,7 +69,7 @@ impl SystemProbe for FakeProbe {
         self.program_data.clone()
     }
     fn local_app_data_dir(&self) -> Option<PathBuf> {
-        None
+        self.local_app_data.clone()
     }
 }
 
