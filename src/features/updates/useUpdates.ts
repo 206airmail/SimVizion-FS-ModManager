@@ -43,8 +43,8 @@ export interface UpdatesController {
   result: UpdateCheck | null;
   /** Why the last switch or check failed, until the next check succeeds. */
   failure: UpdateFailure | null;
-  /** The first-run banner: updates are off and the user has not said "Not now". */
-  promptVisible: boolean;
+  /** The user said "Not now" to the first-run prompt (which also offers the app updates). */
+  promptDismissed: boolean;
   /** Goes up when a check changes what the lists show, so screens read their mods again. */
   revision: number;
   /** Switches online checks on (and runs the first check) or off. */
@@ -201,7 +201,7 @@ export function useUpdates({ ready, reload }: UseUpdatesOptions): UpdatesControl
       checking,
       result,
       failure,
-      promptVisible: settings !== null && !settings.enabled && !dismissed,
+      promptDismissed: dismissed,
       revision,
       setEnabled,
       checkNow,

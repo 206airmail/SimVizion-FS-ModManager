@@ -25,6 +25,7 @@ import { SearchField } from '../../ui/SearchField';
 import { SegmentedControl } from '../../ui/SegmentedControl';
 import { Select } from '../../ui/Select';
 import { Switch } from '../../ui/Switch';
+import './gallery.css';
 
 type DialogSample = 'confirm' | 'destructive' | 'busy' | 'scrolling' | null;
 

@@ -18,9 +18,22 @@
 //   ?mock=rateLimited     the first check that reaches the catalog is told to wait 5 minutes
 //   ?mock=hashMismatch    installs download fully, then fail with verifyFailed
 //   ?mock=noModHubLink    ModHub installs fail with notInstallable (no download link on the page)
+//   ?mock=noGame          no game user folder and no profiles: the first-run screen; Launch game is
+//                         unavailable; "Choose game folder" then reveals the normal data
+//   ?mock=noProfiles      the game's user folder is found but no mod folder is listed (the first-run
+//                         screen with "Add mod folder"; adding one lists the sample folders)
+//   ?mock=msStore         the game is the Microsoft Store version (its user folder is in the app folder)
+//   ?mock=appUpdate       app updates start switched on and a newer version (0.9.0-beta.2) is found;
+//                         Install and restart streams progress for about 3 s, then resolves
+//   ?mock=appUpdateFails  like appUpdate, but the install fails part-way with appUpdateFailed
+//                         (?mock=offline also makes the app update check fail)
+// Launch game resolves, and the game shows as running about 3 s later (it stays running until the
+// page reloads); with ?mock=running it is refused with gameRunning.
 // Online updates start switched off (nothing is matched, only manual links show). Turn them on in
 // Settings; a check takes about 1 s and an install about 2 s per folder.
 // Copies and removals in the mock run at about 40 MB/s, so big mods take seconds and can be cancelled.
+// The sample dataset is compiled in only where __SAMPLE_BUILD__ is true (dev servers and plain
+// browser builds); the production bundle that tauri build makes leaves it out (vite.config.ts).
 
 import { isTauri } from '@tauri-apps/api/core';
 import type { Api } from '.';
@@ -29,6 +42,7 @@ import { createTauriApi } from './tauri';
 
 function createApi(): Api {
   if (isTauri()) return createTauriApi();
+  if (!__SAMPLE_BUILD__) throw new Error('This build only runs inside the desktop app.');
   const modes = new Set((new URLSearchParams(window.location.search).get('mock') ?? '').split(','));
   const mock = createMockApi({
     stress: modes.has('stress'),
@@ -49,10 +63,19 @@ function createApi(): Api {
     rateLimited: modes.has('rateLimited'),
     hashMismatch: modes.has('hashMismatch'),
     noModHubLink: modes.has('noModHubLink'),
+    noGame: modes.has('noGame'),
+    msStore: modes.has('msStore'),
+    noProfiles: modes.has('noProfiles'),
+    appUpdate: modes.has('appUpdate'),
+    appUpdateFails: modes.has('appUpdateFails'),
   });
   if (!modes.has('empty')) return mock;
   // Spread drops nothing the interface needs: `sampleData` is a plain property.
-  return { ...mock, listMods: async () => [] };
+  return {
+    ...mock,
+    listMods: async () => [],
+    healthReport: async () => ({ rows: [], counts: [] }),
+  };
 }
 
 export const api: Api = createApi();

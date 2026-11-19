@@ -40,6 +40,8 @@ export interface SavegamesScreenProps {
   defaultProfileId: string | null;
   game: GameStatus | null;
   fileOps: FileOpsController;
+  /** Opens Settings, where the game folder is chosen. */
+  onOpenSettings?: () => void;
 }
 
 const filterLabels: Record<ReportFilter, string> = {
@@ -58,6 +60,7 @@ export function SavegamesScreen({
   defaultProfileId,
   game,
   fileOps,
+  onOpenSettings,
 }: SavegamesScreenProps) {
   const { state, reload } = useAsync(loadSaves);
   const [chosenSaveId, setChosenSaveId] = useState<string | null>(null);
@@ -119,7 +122,15 @@ export function SavegamesScreen({
           action={<Button onClick={reload}>{strings.states.retry}</Button>}
         />
       )}
-      {state.status === 'ready' && saves.length === 0 && (
+      {state.status === 'ready' && saves.length === 0 && game?.userDirSource === 'none' && (
+        <EmptyState
+          icon={FolderX}
+          title={t.noGameFolderTitle}
+          description={t.noGameFolderText}
+          action={onOpenSettings && <Button onClick={onOpenSettings}>{t.openSettings}</Button>}
+        />
+      )}
+      {state.status === 'ready' && saves.length === 0 && game?.userDirSource !== 'none' && (
         <EmptyState icon={Save} title={t.emptyTitle} description={t.emptyText} />
       )}
       {state.status === 'ready' && saves.length > 0 && profile === null && (

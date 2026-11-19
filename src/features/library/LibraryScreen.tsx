@@ -32,6 +32,7 @@ import { switchBlockedReason } from '../switching/blocked';
 import { SetActiveButton } from '../switching/SetActiveButton';
 import { SwitchNotices } from '../switching/SwitchNotices';
 import type { SwitchingController } from '../switching/useSwitching';
+import type { AppUpdatesController } from '../appUpdate/useAppUpdates';
 import { UpdatesPrompt } from '../updates/UpdatesPrompt';
 import type { UpdatesController } from '../updates/useUpdates';
 import type { CollectionProps } from './collection';
@@ -75,8 +76,21 @@ export interface LibraryScreenProps {
   fileOps: FileOpsController;
   /** Online updates: the first-run prompt, and the revision that says the lists changed. */
   updates: UpdatesController;
+  /** The app's own updates: the first-run prompt offers them together with the mod updates. */
+  appUpdates: AppUpdatesController;
+  /** A mod to select on arrival (from the Health screen); null for none. */
+  focus: LibraryFocus | null;
+  /** The focus was applied: the owner clears it so it does not apply again. */
+  onFocusApplied: () => void;
   /** Opens Compare with this folder on the left. */
   onCompare: () => void;
+}
+
+/** A mod to bring up: its folder and its id there. `id` tells one request from the next. */
+export interface LibraryFocus {
+  id: number;
+  profileId: string;
+  modId: string;
 }
 
 const t = strings.library;
@@ -88,6 +102,9 @@ export function LibraryScreen({
   switching,
   fileOps,
   updates,
+  appUpdates,
+  focus,
+  onFocusApplied,
   onCompare,
 }: LibraryScreenProps) {
   const [query, setQuery] = useState<LibraryQuery>(defaultQuery);
@@ -183,6 +200,27 @@ export function LibraryScreen({
     if (narrow) setDrawerOpen(false);
     else setDocked(false);
   }, [narrow]);
+
+  // Arriving from the Health screen: once this folder's mods are read, select the mod, open its
+  // details and drop any filter that would hide it. (State set while rendering, guarded by the
+  // request id, so it happens once and needs no effect.)
+  const [appliedFocus, setAppliedFocus] = useState<number | null>(null);
+  if (
+    focus !== null &&
+    focus.id !== appliedFocus &&
+    focus.profileId === profile.id &&
+    state.status === 'ready'
+  ) {
+    setAppliedFocus(focus.id);
+    if (allMods.some((mod) => mod.id === focus.modId)) {
+      setQuery(defaultQuery);
+      select(selectOnly(focus.modId));
+      openInspector();
+    }
+  }
+  useEffect(() => {
+    if (appliedFocus !== null && focus?.id === appliedFocus) onFocusApplied();
+  }, [appliedFocus, focus, onFocusApplied]);
 
   useEffect(() => {
     if (!(narrow && drawerOpen)) return;
@@ -360,7 +398,7 @@ export function LibraryScreen({
           </div>
         </div>
 
-        <UpdatesPrompt className="mm-library__notice" updates={updates} />
+        <UpdatesPrompt className="mm-library__notice" updates={updates} appUpdates={appUpdates} />
         <SwitchNotices
           className="mm-library__notice"
           switching={switching}

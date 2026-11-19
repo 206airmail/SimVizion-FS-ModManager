@@ -1,0 +1,87 @@
+/* The app-update banner, the first-run prompt's choices, and the Settings pieces that go with
+   them. Colours come only from tokens.css. */
+
+/* ---------- Update banner ---------- */
+.mm-appupdate .sv-banner__body {
+  gap: 6px;
+}
+.mm-appupdate__lead,
+.mm-appupdate__failure {
+  display: block;
+}
+.mm-appupdate__failure {
+  color: var(--sv-text);
+  font-weight: 600;
+}
+.mm-appupdate__notes-block {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 4px;
+}
+.mm-appupdate__notes-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+.mm-appupdate__notes {
+  max-height: 180px;
+  padding: 6px 10px;
+  overflow: auto;
+  border: 1px solid var(--sv-border);
+  border-radius: var(--sv-radius-control);
+  background: var(--sv-recessed);
+  color: var(--sv-text);
+  line-height: 20px;
+  overflow-wrap: anywhere;
+  white-space: pre-line;
+}
+/* Collapsed: a few lines, clipped with an ellipsis; "Show notes" opens the rest. The clip sits on
+   an inner box so the padding of the outer one cannot show a sliver of the next line. */
+.mm-appupdate__notes-text[data-collapsed='true'] {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+}
+.mm-appupdate__progress {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 4px;
+}
+.mm-appupdate__progress-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--sv-text-readable-secondary);
+  font-size: 12px;
+}
+
+/* ---------- First-run prompt ---------- */
+.mm-prompt__lead {
+  display: block;
+}
+.mm-prompt__choices {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+}
+.mm-prompt__choices .sv-checkbox {
+  align-items: flex-start;
+}
+.mm-prompt__label,
+.mm-prompt__detail {
+  display: block;
+}
+.mm-prompt__label {
+  color: var(--sv-text);
+  font-weight: 500;
+}
+.mm-prompt__detail {
+  color: var(--sv-text-readable-secondary);
+  font-size: 12px;
+}
