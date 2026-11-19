@@ -17,11 +17,12 @@ User reviews the prototype (`npm run dev`, open `http://localhost:1420`). After 
 
 2026-11-18: `npm run check` passes (78 tests); `cargo test -p fsmm-core` 15 passed; `cargo fmt --all --check` and `cargo clippy -p fsmm-core --all-targets -- -D warnings` clean; `vite build` succeeds. Rendered review in Orca's browser at 1920×1080, 1440×810, 1280×720 and 960×640.
 
+2026-11-19: after the Windows SDK reinstall, `cargo check --workspace`, `cargo clippy --workspace --all-targets -- -D warnings` and `cargo test --workspace` pass, and `npm run tauri dev` opens the "SimVizion Mod Manager" window (process responding, WebView2 running). Window contents not screenshotted: Orca's screen capture is blocked by antivirus on this machine.
+
 Production build, 5,000 mods: list scroll step median 2.9 ms (p95 4.0 ms); sorting causes no task over 50 ms; grid scroll step median 8.1 ms (p95 29 ms).
 
 ## Known issues
 
-- **Tauri shell does not compile on the development machine.** The Windows SDK 10.0.26100.0 headers are corrupted (many files, including `Windows.h` and `winnt.h`, are zero-filled), so the `vswhom-sys` C++ build step fails. Needs a repair of the Windows SDK through the Visual Studio Installer. Until then `npm run tauri dev`, `cargo check --workspace` and `cargo clippy --workspace` fail; the frontend and `fsmm-core` are unaffected. The app has not been seen in the real WebView2 window yet.
 - Grid view drops frames when a whole row of cards mounts at once with 5,000 mods (p95 29 ms). Re-measure with real cached thumbnails in Milestone 3.
 - Keyboard focus ring on the list was checked by code, not seen: scripted key presses do not trigger `:focus-visible`.
 - The app emblem (`src-tauri/app-icon.svg`, `Emblem.tsx`) is a placeholder.
