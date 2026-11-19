@@ -217,8 +217,11 @@ export function createMod(ctx: GenContext, kind: ModKind): ModEntry {
   const author = ctx.authors[Math.floor(rng.next() ** 2 * ctx.authors.length)] ?? 'Unknown';
   const version = makeVersion(rng);
   const source = makeSource(ctx, kind, author, stem);
-  const r = rng.next();
-  const descVersion = r < 0.05 ? rng.int(111, 116) : 96 + Math.floor(15 * Math.sqrt(rng.next()));
+  // Never above the game's value: only a newer descVersion is an issue, and those are added
+  // deliberately by the profile recipe. The discarded draw keeps the rest of the generated
+  // data (sizes, dates) identical to what it was when a few mods here were newer.
+  rng.next();
+  const descVersion = 96 + Math.floor((GAME_DESC_VERSION - 95) * Math.sqrt(rng.next()));
   const modified = toIso(MIN_MODIFIED + (MAX_MODIFIED - MIN_MODIFIED) * rng.next() ** 0.8);
   const hasIcon = rng.chance(0.92);
 
