@@ -81,11 +81,11 @@ pub(super) struct NetState {
     busy: AtomicBool,
 }
 
-fn iso(time: SystemTime) -> String {
+pub(super) fn iso(time: SystemTime) -> String {
     humantime::format_rfc3339_seconds(time).to_string()
 }
 
-fn parse_iso(text: &str) -> Option<SystemTime> {
+pub(super) fn parse_iso(text: &str) -> Option<SystemTime> {
     humantime::parse_rfc3339(text).ok()
 }
 
