@@ -158,6 +158,7 @@ mod tests {
         ModRecord {
             path: PathBuf::from(file_name),
             icon: None,
+            fingerprint: String::new(),
             entry: ModEntry {
                 id: file_name.into(),
                 profile_id: "p".into(),
@@ -179,6 +180,8 @@ mod tests {
                 source: ModSource::Unknown,
                 update: UpdateState::Unknown,
                 also_in: Vec::new(),
+                tags: Vec::new(),
+                note: None,
             },
         }
     }

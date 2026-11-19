@@ -6,7 +6,10 @@ import './styles/base.css';
 import './ui/index.css';
 import './features/shell/shell.css';
 import './features/library/library.css';
+import './features/library/tags.css';
 import './features/files/files.css';
+import './features/compare/compare.css';
+import './features/savegames/savegames.css';
 import './features/gallery/gallery.css';
 
 createRoot(document.getElementById('root')!).render(

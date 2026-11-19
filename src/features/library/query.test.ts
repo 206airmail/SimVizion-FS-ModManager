@@ -37,6 +37,8 @@ function makeMod(overrides: Partial<ModEntry> = {}): ModEntry {
     source: { type: 'unknown' },
     update: { type: 'unknown' },
     alsoIn: [],
+    tags: [],
+    note: null,
     ...overrides,
   };
 }
@@ -157,6 +159,22 @@ describe('queryMods filters', () => {
 
   it('filters to mods with an update available', () => {
     expect(run({ status: 'updates' })).toEqual(['p1', 's1']);
+  });
+
+  it('filters by tag without regard to case', () => {
+    const tagged = [
+      makeMod({ id: 't1', title: 'T1', tags: ['Favourite', 'Keep'] }),
+      makeMod({ id: 't2', title: 'T2', tags: ['favourite'] }),
+      makeMod({ id: 't3', title: 'T3', tags: ['Keep'] }),
+      makeMod({ id: 't4', title: 'T4' }),
+    ];
+    const runTagged = (tag: string) => ids(queryMods(tagged, query({ tag })));
+    expect(runTagged('')).toEqual(['t1', 't2', 't3', 't4']);
+    expect(runTagged('Favourite')).toEqual(['t1', 't2']);
+    expect(runTagged('FAVOURITE')).toEqual(['t1', 't2']);
+    expect(runTagged('keep')).toEqual(['t1', 't3']);
+    expect(runTagged('nothing')).toEqual([]);
+    expect(ids(queryMods(tagged, query({ tag: 'keep', search: 't3' })))).toEqual(['t3']);
   });
 
   it('combines kind, status and search', () => {

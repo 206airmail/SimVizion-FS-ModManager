@@ -50,6 +50,8 @@ export const strings = {
     targetChanged:
       'The mod or the target folder changed since the plan was made, so it was skipped.',
     cannotRemoveProfile: 'The active folder and the game default folder stay in the list.',
+    savegameMissing: 'That savegame could not be found. It may have been deleted in the game.',
+    savegameUnreadable: 'That savegame could not be read. The game may still be saving it.',
   } satisfies Record<ErrorCode, string>,
 
   actionFailed: {
@@ -64,6 +66,10 @@ export const strings = {
     move: 'Could not move the mods',
     remove: 'Could not remove the mods',
     cancelOperation: 'Could not cancel the operation',
+    saveTags: 'Could not save the tags',
+    saveNote: 'Could not save the note',
+    loadComparison: 'Could not compare the folders',
+    prepareCopy: 'Could not prepare the copy',
     renameProfile: 'Could not rename the folder',
     removeProfile: 'Could not remove the folder from the list',
     dismiss: 'Dismiss',
@@ -113,6 +119,7 @@ export const strings = {
     updates: (count: number) => `${count} ${plural(count, 'update', 'updates')} available`,
     tools: 'Tools',
     health: 'Health',
+    compare: 'Compare',
     savegames: 'Savegames',
     settings: 'Settings',
     totals: 'All profiles',
@@ -128,12 +135,20 @@ export const strings = {
     setActive: 'Set as active',
     openFolder: 'Open folder',
     rescan: 'Rescan folder',
+    compare: 'Compare with another folder',
     searchLabel: 'Search mods',
     searchPlaceholder: 'Search title, author or file name',
     clearSearch: 'Clear search',
     kindLabel: 'Filter by type',
     kindPrefix: 'Type',
     kindAll: 'All types',
+    tagLabel: 'Filter by tag',
+    tagPrefix: 'Tag',
+    tagAll: 'All tags',
+    tagMarks: (tags: readonly string[], hasNote: boolean) =>
+      [tags.length > 0 ? `Tags: ${tags.join(', ')}` : '', hasNote ? 'Has a note' : '']
+        .filter(Boolean)
+        .join('. '),
     statusLabel: 'Filter by status',
     statusAll: 'All',
     statusIssues: 'Issues',
@@ -164,6 +179,33 @@ export const strings = {
     noIcon: 'No icon',
   },
 
+  /** The tag editor and the note field in the inspector. */
+  tags: {
+    title: 'Tags',
+    inputLabel: 'Add a tag',
+    inputLabelMany: (count: number) => `Add a tag to ${formatCount(count)} mods`,
+    inputPlaceholder: 'Add a tag',
+    add: 'Add tag',
+    remove: (tag: string) => `Remove the tag ${tag}`,
+    removeFromAll: (tag: string) => `Remove the tag ${tag} from all selected mods`,
+    partial: (count: number, total: number) => `${formatCount(count)}/${formatCount(total)}`,
+    partialHint: (tag: string, count: number, total: number) =>
+      `${tag}: on ${formatCount(count)} of ${formatCount(total)} selected mods`,
+    suggestions: 'Existing tags',
+    suggestionLabel: (tag: string) => `Add the tag ${tag}`,
+    none: 'No tags yet.',
+    noneMany: 'None of the selected mods has a tag yet.',
+    tooLong: (max: number) => `A tag can have at most ${formatCount(max)} characters.`,
+    tooMany: (max: number) => `A mod can have at most ${formatCount(max)} tags.`,
+    sharedHint: 'Tags and notes follow the mod into every folder.',
+    noteTitle: 'Notes',
+    noteLabel: 'Notes about this mod',
+    notePlaceholder: 'Write a note for yourself. It saves when you leave the field.',
+    noteSaving: 'Saving…',
+    noteSaved: 'Saved',
+    noteHint: 'Ctrl+Enter saves',
+  },
+
   states: {
     loadingMods: 'Loading mods',
     readingMods: (done: number, total: number) => `Reading ${formatCount(done)} of ${mods(total)}`,
@@ -189,6 +231,7 @@ export const strings = {
     close: 'Close details',
     emptyTitle: 'No mod selected',
     emptyText: 'Select a mod to see its details, issues and available update.',
+    multiTagsTitle: 'Tags for the selection',
     multiTitle: (count: number) => `${count} mods selected`,
     multiText: (size: string) => `${size} in total`,
     by: (author: string) => `by ${author}`,
@@ -238,6 +281,9 @@ export const strings = {
     transfer: {
       title: (mode: 'copy' | 'move', count: number) =>
         `${mode === 'copy' ? 'Copy' : 'Move'} ${mods(count)} to another folder`,
+      titleTo: (mode: 'copy' | 'move', count: number, target: string) =>
+        `${mode === 'copy' ? 'Copy' : 'Move'} ${mods(count)} to ${target}`,
+      planning: 'Working out what the transfer needs…',
       targetLabel: 'Target folder',
       targetEmpty:
         'There is no other mod folder to send these to. Add one first with "Add mod folder".',
@@ -335,8 +381,186 @@ export const strings = {
     },
   },
 
+  /** Compare mode: two folders in one merged table. */
+  compare: {
+    title: 'Compare folders',
+    leftLabel: 'Left folder',
+    rightLabel: 'Right folder',
+    leftPrefix: 'Left',
+    rightPrefix: 'Right',
+    swap: 'Swap the two folders',
+    rescan: 'Compare again',
+    filterLabel: 'Show',
+    filterDifferences: 'Differences',
+    filterOnlyLeft: 'Only left',
+    filterOnlyRight: 'Only right',
+    filterDifferent: 'Different',
+    filterAll: 'All',
+    searchLabel: 'Search the comparison',
+    searchPlaceholder: 'Search title or mod name',
+    tableLabel: (left: string, right: string) => `${left} compared with ${right}`,
+    columns: {
+      mod: 'Mod',
+      version: 'Version',
+      size: 'Size',
+      modified: 'Modified',
+      state: 'State',
+    },
+    states: {
+      onlyLeft: 'Only left',
+      onlyRight: 'Only right',
+      versionDiffers: 'Version differs',
+      contentDiffers: 'Content differs',
+      identical: 'Identical',
+    },
+    stateHints: {
+      onlyLeft: 'This mod is only in the left folder.',
+      onlyRight: 'This mod is only in the right folder.',
+      versionDiffers: 'The two folders hold different versions of this mod.',
+      contentDiffers: 'Same version, but the files are not the same.',
+      identical: 'The same version and the same content.',
+    },
+    absent: 'Not in this folder',
+    count: (shown: number, total: number) =>
+      shown === total ? mods(total) : `${formatCount(shown)} of ${mods(total)}`,
+    selected: (count: number) => `${formatCount(count)} selected`,
+    nothingSelected: 'Select mods to copy or move them',
+    copyRight: 'Copy →',
+    copyLeft: 'Copy ←',
+    moveRight: 'Move →',
+    moveLeft: 'Move ←',
+    transferHint: (mode: 'copy' | 'move', from: string, to: string) =>
+      `${mode === 'copy' ? 'Copy' : 'Move'} the selected mods from ${from} to ${to}`,
+    blockedNoSelection: 'Select one or more mods first.',
+    blockedNotOnSide: (folder: string) => `None of the selected mods is in ${folder}.`,
+    needTwoTitle: 'Comparing needs two folders',
+    needTwoText: 'Add another mod folder with "Add mod folder", then compare the two.',
+    loadingLabel: 'Comparing the folders',
+    noRowsTitle: 'Nothing to show here',
+    noRowsText: 'No mod fits this filter and search.',
+    identicalTitle: 'The two folders match',
+    identicalText: 'Every mod is in both folders, at the same version and with the same content.',
+    showAll: 'Show all mods',
+  },
+
+  /** Savegames: what a save needs against one folder. */
+  savegames: {
+    title: 'Savegames',
+    checkAgainst: 'Check against',
+    folderLabel: 'Mod folder to check the savegame against',
+    rescan: 'Check again',
+    listLabel: 'Savegames',
+    listColumns: {
+      name: 'Savegame',
+      map: 'Map',
+      saved: 'Saved',
+      played: 'Play time',
+      money: 'Money',
+      mods: 'Mods',
+    },
+    slot: (slot: number) => `Slot ${slot}`,
+    unknownDate: 'Unknown',
+    playTime: (minutes: number | null) => {
+      if (minutes === null) return '–';
+      const hours = Math.floor(minutes / 60);
+      const rest = minutes % 60;
+      return hours === 0 ? `${rest} min` : `${formatCount(hours)} h ${rest} min`;
+    },
+    money: (value: number | null) => (value === null ? '–' : formatCount(value)),
+    summary: (count: number, required: number) =>
+      required === 0 ? mods(count) : `${mods(count)}, ${formatCount(required)} required`,
+    filterLabel: 'Show',
+    filterAll: 'All',
+    filterMissing: 'Missing',
+    filterVersion: 'Different version',
+    filterFile: 'Different file',
+    filterPresent: 'Present',
+    filterChecking: 'Checking',
+    tableLabel: (save: string, folder: string) => `Mods of ${save} in ${folder}`,
+    columns: {
+      mod: 'Mod',
+      saved: 'In the save',
+      installed: 'In this folder',
+      state: 'State',
+      foundIn: 'Found in',
+    },
+    required: 'Required',
+    states: {
+      present: 'Present',
+      versionDiffers: 'Different version',
+      fileDiffers: 'Different file',
+      hashPending: 'Checking…',
+      notChecked: 'Not checked',
+      missing: 'Missing',
+      dlcInstalled: 'DLC installed',
+      dlcMissing: 'DLC not installed',
+    },
+    stateHints: {
+      present: 'The folder has this mod at the same version.',
+      versionDiffers: 'The folder has this mod, but not the version the save was made with.',
+      fileDiffers: 'The version is the same, but the file is not the one the save was made with.',
+      hashPending: 'The file is being compared with the save.',
+      notChecked: 'The version matches, but the file was not compared with the save.',
+      missing: 'The folder does not have this mod.',
+      dlcInstalled: 'This DLC is installed in the game.',
+      dlcMissing: 'This DLC is not installed in the game. Get it from the game store.',
+    },
+    rowsEmptyTitle: 'No mods in this state',
+    rowsEmptyText: 'Nothing in this savegame fits that filter.',
+    showAll: 'Show all mods',
+    loadingLabel: 'Reading the savegame',
+
+    requiredMissingTitle: (title: string) => `The map mod ${title} is missing`,
+    requiredMissingFound: (folders: string) =>
+      `The game will not load this savegame without it. You have it in ${folders}: copy it from there with the button below.`,
+    requiredMissingNowhere:
+      'The game will not load this savegame without it, and it is not in any of your folders. Download the map again, then add it to this folder.',
+
+    copyMissingTitle: 'Copy the missing mods',
+    copyMissingText: 'These mods are missing here, but you have them in other folders.',
+    copyFrom: (count: number, folder: string) => `Copy ${formatCount(count)} from ${folder}`,
+    copyFromHint: (count: number, folder: string, target: string) =>
+      `Copy ${mods(count)} from ${folder} to ${target}`,
+    copyPreparing: 'Preparing…',
+    notAnywhereTitle: 'Not in any of your folders',
+    notAnywhereCount: (count: number) => `${mods(count)}`,
+    notAnywhereShow: 'Show names',
+    notAnywhereHide: 'Hide names',
+    notAnywhereLabel: 'Mods that are in none of your folders',
+
+    extrasTitle: 'Extra mods in this folder',
+    extrasText: 'The savegame does not use these mods. The game still loads them.',
+    extrasLabel: 'Mods in this folder that the savegame does not use',
+    extrasNone: 'Every mod in this folder is used by the savegame.',
+
+    hash: {
+      label: 'File check progress',
+      title: 'Checking the mod files against the save',
+      preparing: 'Preparing…',
+      files: (done: number, total: number) =>
+        `${formatCount(done)} of ${formatCount(total)} ${plural(total, 'file', 'files')}`,
+      percent: (fraction: number) => `${Math.floor(fraction * 100)}%`,
+      cancel: 'Cancel',
+      cancelling: 'Cancelling…',
+      cancelledTitle: 'File check cancelled',
+      cancelledText:
+        'The versions are checked, but the files were not compared with the save. Rows marked "Checking…" are unconfirmed.',
+      checkAgain: 'Check the files',
+      failedTitle: 'Could not check the files',
+    },
+
+    emptyTitle: 'No savegames found',
+    emptyText:
+      'The game has not saved a game yet, or its user folder could not be found. Savegames appear here once the game has written one.',
+    loadFailedTitle: 'Could not read the savegames',
+    reportFailedTitle: 'Could not check this savegame',
+    noFolders: 'Add a mod folder first. A savegame is checked against one of your folders.',
+  },
+
   profileMenu: {
     actions: (name: string) => `Actions for ${name}`,
+    compareWith: 'Compare with…',
+    compareNeedsTwo: 'Add another mod folder to compare with.',
     rename: 'Rename…',
     remove: 'Remove from list…',
     blockedActive: 'The active folder stays in the list. Make another folder active first.',

@@ -246,5 +246,7 @@ export function createMod(ctx: GenContext, kind: ModKind): ModEntry {
     source,
     update: makeUpdate(rng, source, version),
     alsoIn: [],
+    tags: [],
+    note: null,
   };
 }

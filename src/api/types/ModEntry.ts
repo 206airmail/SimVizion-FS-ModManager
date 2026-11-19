@@ -26,4 +26,12 @@ modified: string, multiplayer: boolean, dependencies: Array<Dependency>, issues:
 /**
  * Ids of other profiles that contain a mod with the same name.
  */
-alsoIn: Array<string>, };
+alsoIn: Array<string>, 
+/**
+ * The user's tags for this mod name (shared by every profile), sorted.
+ */
+tags: Array<string>, 
+/**
+ * The user's note for this mod name (shared by every profile).
+ */
+note: string | null, };

@@ -23,6 +23,10 @@ import { FileActions } from '../files/FileActions';
 import type { FileOpsController } from '../files/useFileOps';
 import { describeSource, kindIcons, severityIcons } from './labels';
 import { ModIcon } from './ModIcon';
+import { NoteField } from './NoteField';
+import { TagEditor } from './TagEditor';
+import { addTags, removeTag, tagCounts, tagProblem } from './tags';
+import type { ModMetaController } from './useModMeta';
 
 export interface InspectorProps {
   /** The selected mods, in list order. */
@@ -30,6 +34,8 @@ export interface InspectorProps {
   profiles: readonly Profile[];
   game: GameStatus | null;
   fileOps: FileOpsController;
+  /** Tags and notes: editing them, and the tags that exist. */
+  meta: ModMetaController;
   /** Shown as a drawer over the list instead of beside it. */
   overlay: boolean;
   onClose: () => void;
@@ -40,7 +46,15 @@ const t = strings.inspector;
 /** The issue's data worded for display; null when there is nothing to add to the help text. */
 const detailText = (issue: ModIssue) => strings.issueDetail[issue.kind](issue.detail);
 
-export function Inspector({ mods, profiles, game, fileOps, overlay, onClose }: InspectorProps) {
+export function Inspector({
+  mods,
+  profiles,
+  game,
+  fileOps,
+  meta,
+  overlay,
+  onClose,
+}: InspectorProps) {
   const only = mods.length === 1 ? mods[0] : undefined;
   return (
     <aside
@@ -53,16 +67,23 @@ export function Inspector({ mods, profiles, game, fileOps, overlay, onClose }: I
       </div>
 
       {only ? (
-        <ModDetails mod={only} profiles={profiles} game={game} fileOps={fileOps} />
+        <ModDetails mod={only} profiles={profiles} game={game} fileOps={fileOps} meta={meta} />
       ) : mods.length > 1 ? (
         <>
-          <EmptyState
-            icon={Boxes}
-            title={t.multiTitle(mods.length)}
-            description={t.multiText(
-              formatBytes(mods.reduce((sum, mod) => sum + mod.sizeBytes, 0)),
-            )}
-          />
+          <div className="mm-inspector__scroll">
+            <EmptyState
+              icon={Boxes}
+              title={t.multiTitle(mods.length)}
+              description={t.multiText(
+                formatBytes(mods.reduce((sum, mod) => sum + mod.sizeBytes, 0)),
+              )}
+            />
+            <div className="mm-inspector__sections">
+              <Section title={t.multiTagsTitle}>
+                <TagsSection mods={mods} meta={meta} />
+              </Section>
+            </div>
+          </div>
           <div className="sv-panel__footer">
             <FileActions mods={mods} profiles={profiles} game={game} fileOps={fileOps} />
           </div>
@@ -79,11 +100,13 @@ function ModDetails({
   profiles,
   game,
   fileOps,
+  meta,
 }: {
   mod: ModEntry;
   profiles: readonly Profile[];
   game: GameStatus | null;
   fileOps: FileOpsController;
+  meta: ModMetaController;
 }) {
   const showInFolder = useActionError(`${mod.profileId}/${mod.id}`);
   const otherProfiles = profiles.filter((profile) => mod.alsoIn.includes(profile.id));
@@ -143,6 +166,14 @@ function ModDetails({
               </ul>
             </Section>
           )}
+
+          <Section title={strings.tags.title}>
+            <TagsSection mods={[mod]} meta={meta} />
+          </Section>
+
+          <Section title={strings.tags.noteTitle}>
+            <NoteField key={`${mod.profileId}/${mod.id}`} mod={mod} meta={meta} />
+          </Section>
 
           <Section title={t.description}>
             <p className={cx('mm-inspector__description', mod.description && 'sv-selectable')}>
@@ -238,6 +269,30 @@ function ModDetails({
         />
         <FileActions mods={[mod]} profiles={profiles} game={game} fileOps={fileOps} />
       </div>
+    </>
+  );
+}
+
+/** The tag editor for one mod or for a selection, with the failure of the last edit. */
+function TagsSection({ mods, meta }: { mods: readonly ModEntry[]; meta: ModMetaController }) {
+  return (
+    <>
+      <TagEditor
+        chips={tagCounts(mods)}
+        total={mods.length}
+        known={meta.knownTags}
+        problemFor={(tag) => tagProblem(mods, tag)}
+        onAdd={(tags) => void meta.setTags(mods, (current) => addTags(current, tags))}
+        onRemove={(tag) => void meta.setTags(mods, (current) => removeTag(current, tag))}
+      />
+      {meta.failure !== null && (
+        <ActionErrorBanner
+          className="mm-inspector__meta-failure"
+          title={meta.failure.title}
+          message={meta.failure.message}
+          onDismiss={meta.dismissFailure}
+        />
+      )}
     </>
   );
 }

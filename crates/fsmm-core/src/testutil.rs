@@ -42,6 +42,35 @@ pub fn write_folder(root: &Path, entries: &[(&str, &[u8])]) {
     }
 }
 
+/// One `<mod .../>` line of a generated `careerSavegame.xml`. `required` of `None` leaves the
+/// attribute out, as older saves do.
+pub fn save_mod_xml(name: &str, version: &str, required: Option<bool>, hash: &str) -> String {
+    let required = required.map_or(String::new(), |r| format!(" required=\"{r}\""));
+    format!(
+        "<mod modName=\"{name}\" title=\"Title of {name}\" version=\"{version}\"{required} \
+         fileHash=\"{hash}\"/>"
+    )
+}
+
+/// A generated `careerSavegame.xml` with fixed settings and statistics around the given mods.
+pub fn save_xml(mods: &[String]) -> String {
+    format!(
+        "<?xml version=\"1.0\" encoding=\"utf-8\" standalone=\"no\"?>\
+         <careerSavegame revision=\"2\" valid=\"true\">\
+         <settings><savegameName>My Farm</savegameName><mapId>FS25_TestMap.MapUS</mapId>\
+         <mapTitle>Test Map</mapTitle><saveDate>2026-11-19</saveDate></settings>\
+         <statistics><money>12345</money><playTime>90.4</playTime></statistics>{}</careerSavegame>",
+        mods.concat()
+    )
+}
+
+/// Writes `<user_dir>/<id>/careerSavegame.xml` (and nothing else of a save).
+pub fn write_save_file(user_dir: &Path, id: &str, xml: &str) {
+    let dir = user_dir.join(id);
+    fs::create_dir_all(&dir).unwrap();
+    fs::write(dir.join("careerSavegame.xml"), xml).unwrap();
+}
+
 /// How a generated DDS file declares its pixel format.
 #[derive(Debug, Clone, Copy)]
 pub enum DdsFormat {
