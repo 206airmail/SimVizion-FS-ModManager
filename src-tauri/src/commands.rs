@@ -30,7 +30,7 @@ pub(crate) fn context() -> GameContext {
 }
 
 /// Debug builds print how long the main calls take (plan M3 verification). Ids only.
-fn log_timing(what: &str, started: Instant) {
+pub(crate) fn log_timing(what: &str, started: Instant) {
     if cfg!(debug_assertions) {
         eprintln!(
             "[timing] {what}: {:.1} ms",
