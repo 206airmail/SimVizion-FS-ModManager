@@ -4,15 +4,27 @@
 //! A copy is written under a hidden staging name in the target folder, verified, and only then
 //! renamed to the real name, so neither the game nor the scanner ever sees half a mod.
 
+use std::ffi::{OsStr, OsString};
 use std::fmt;
-use std::io;
+use std::fs::{self, File};
+use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::AtomicBool;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::SystemTime;
+
+use crate::container::ModContainer;
 
 /// Suffix of a staged copy; the full name is `.<name>.fsmm-partial`. The leading dot makes
 /// `scan::enumerate` ignore it.
 pub const STAGING_SUFFIX: &str = ".fsmm-partial";
 
+/// Bytes read and written per step; progress and cancellation are per chunk.
+const CHUNK: usize = 4 * 1024 * 1024;
+
+#[cfg(test)]
+pub(crate) mod fakes;
+#[cfg(test)]
+mod tests;
 #[cfg(windows)]
 mod win;
 #[cfg(windows)]
@@ -76,13 +88,185 @@ impl fmt::Display for FileOpError {
 impl std::error::Error for FileOpError {}
 
 /// `.<name>.fsmm-partial`.
-pub fn staging_name(_name: &str) -> String {
-    todo!("WS-A")
+pub fn staging_name(name: &str) -> String {
+    format!(".{name}{STAGING_SUFFIX}")
 }
 
-/// Total bytes of a file, or of every file in a folder.
-pub fn size_of(_path: &Path) -> io::Result<u64> {
-    todo!("WS-A")
+/// Like [`staging_name`], for names that are not valid UTF-8.
+fn staging_os_name(name: &OsStr) -> OsString {
+    let mut out = OsString::from(".");
+    out.push(name);
+    out.push(STAGING_SUFFIX);
+    out
+}
+
+/// Total bytes of a file, or of every file in a folder (found by walking it; links are not
+/// followed, as in `scan::enumerate`).
+pub fn size_of(path: &Path) -> io::Result<u64> {
+    Ok(stats_of(path)?.0)
+}
+
+/// Total bytes and the newest file mtime of a file or folder (a file's own mtime). A folder with
+/// no files has no newest time. These are the size and mtime `scan::enumerate` records for a
+/// mod, except that an unreadable part is an error here.
+pub fn stats_of(path: &Path) -> io::Result<(u64, Option<SystemTime>)> {
+    let meta = fs::metadata(path)?;
+    if !meta.is_dir() {
+        return Ok((meta.len(), meta.modified().ok()));
+    }
+    let mut size = 0u64;
+    let mut newest: Option<SystemTime> = None;
+    let mut pending = vec![path.to_path_buf()];
+    while let Some(dir) = pending.pop() {
+        for item in fs::read_dir(&dir)? {
+            let item = item?;
+            let file_type = item.file_type()?;
+            if file_type.is_dir() {
+                pending.push(item.path());
+            } else if file_type.is_file() {
+                let meta = item.metadata()?;
+                size = size.saturating_add(meta.len());
+                if let Ok(m) = meta.modified() {
+                    newest = Some(newest.map_or(m, |n| n.max(m)));
+                }
+            }
+        }
+    }
+    Ok((size, newest))
+}
+
+fn io_err(e: &io::Error) -> FileOpError {
+    FileOpError::Io(format!("{:?}", e.kind()))
+}
+
+/// The name a mod has in its folder; a path without one cannot be copied.
+fn name_of(path: &Path) -> Result<&OsStr, FileOpError> {
+    path.file_name()
+        .ok_or_else(|| FileOpError::Io(format!("{:?}", io::ErrorKind::InvalidInput)))
+}
+
+fn taken(path: &Path) -> bool {
+    fs::symlink_metadata(path).is_ok()
+}
+
+/// Removes a staged copy: this app's own partial file, so it is removed directly instead of
+/// going to the Recycle Bin. Best effort; nothing else is ever removed this way.
+fn remove_staging(path: &Path) {
+    match fs::symlink_metadata(path) {
+        Ok(meta) if meta.is_dir() => {
+            let _ = fs::remove_dir_all(path);
+        }
+        Ok(_) => {
+            let _ = fs::remove_file(path);
+        }
+        Err(_) => {}
+    }
+}
+
+fn is_zip_name(name: &OsStr) -> bool {
+    Path::new(name)
+        .extension()
+        .is_some_and(|e| e.eq_ignore_ascii_case("zip"))
+}
+
+/// Copies files in [`CHUNK`]s with progress and cancellation.
+struct Copier<'a> {
+    buf: Vec<u8>,
+    progress: &'a mut dyn FnMut(u64),
+    cancel: &'a AtomicBool,
+}
+
+impl Copier<'_> {
+    fn file(&mut self, src: &Path, dst: &Path) -> Result<(), FileOpError> {
+        let mut input = File::open(src).map_err(|e| io_err(&e))?;
+        let modified = input.metadata().and_then(|m| m.modified()).ok();
+        let mut output = File::create_new(dst).map_err(|e| io_err(&e))?;
+        loop {
+            // Checked before the end-of-file read too, so a cancel during the last chunk counts.
+            if self.cancel.load(Ordering::SeqCst) {
+                return Err(FileOpError::Cancelled);
+            }
+            let n = match input.read(&mut self.buf) {
+                Ok(0) => break,
+                Ok(n) => n,
+                Err(e) if e.kind() == io::ErrorKind::Interrupted => continue,
+                Err(e) => return Err(io_err(&e)),
+            };
+            output.write_all(&self.buf[..n]).map_err(|e| io_err(&e))?;
+            (self.progress)(n as u64);
+        }
+        if let Some(modified) = modified {
+            output.set_modified(modified).map_err(|e| io_err(&e))?;
+        }
+        Ok(())
+    }
+
+    fn folder(&mut self, src: &Path, dst: &Path) -> Result<(), FileOpError> {
+        fs::create_dir(dst).map_err(|e| io_err(&e))?;
+        for item in fs::read_dir(src).map_err(|e| io_err(&e))? {
+            let item = item.map_err(|e| io_err(&e))?;
+            let file_type = item.file_type().map_err(|e| io_err(&e))?;
+            let target = dst.join(item.file_name());
+            if file_type.is_dir() {
+                self.folder(&item.path(), &target)?;
+            } else if file_type.is_file() {
+                self.file(&item.path(), &target)?;
+            }
+        }
+        Ok(())
+    }
+}
+
+/// Every file under `root` as `(relative path with '/', size)`, sorted.
+fn file_list(root: &Path) -> io::Result<Vec<(String, u64)>> {
+    let mut out = Vec::new();
+    let mut pending = vec![(root.to_path_buf(), String::new())];
+    while let Some((dir, rel)) = pending.pop() {
+        for item in fs::read_dir(&dir)? {
+            let item = item?;
+            let file_type = item.file_type()?;
+            let name = format!("{rel}{}", item.file_name().to_string_lossy());
+            if file_type.is_dir() {
+                pending.push((item.path(), format!("{name}/")));
+            } else if file_type.is_file() {
+                out.push((name, item.metadata()?.len()));
+            }
+        }
+    }
+    out.sort();
+    Ok(out)
+}
+
+fn entry_count(path: &Path) -> Option<usize> {
+    ModContainer::open(path).ok().map(|c| c.names().count())
+}
+
+/// Compares a staged copy with its source.
+fn verify(src: &Path, staged: &Path, is_dir: bool, zip: bool) -> Result<(), FileOpError> {
+    let mismatch = |what: &str| FileOpError::Verify(what.to_string());
+    if is_dir {
+        let a = file_list(src).map_err(|e| io_err(&e))?;
+        let b = file_list(staged).map_err(|e| io_err(&e))?;
+        return if a == b {
+            Ok(())
+        } else {
+            Err(mismatch("files"))
+        };
+    }
+    let want = fs::metadata(src).map_err(|e| io_err(&e))?.len();
+    let got = fs::metadata(staged).map_err(|e| io_err(&e))?.len();
+    if want != got {
+        return Err(mismatch("size"));
+    }
+    // A source that is not a readable zip (a broken download) is still copied faithfully.
+    if zip {
+        if let Some(count) = entry_count(src) {
+            if entry_count(staged) != Some(count) {
+                return Err(mismatch("zipEntries"));
+            }
+        }
+    }
+    Ok(())
 }
 
 /// Copies a mod (zip file or folder) into `dst_dir` under its own name: staged, verified
@@ -90,23 +274,96 @@ pub fn size_of(_path: &Path) -> io::Result<u64> {
 /// mtimes kept, then renamed into place. `progress` receives bytes written since the last call.
 /// Checks `cancel` between chunks. On any failure the staged copy is removed.
 pub fn copy_staged(
-    _src: &Path,
-    _dst_dir: &Path,
-    _progress: &mut dyn FnMut(u64),
-    _cancel: &AtomicBool,
+    src: &Path,
+    dst_dir: &Path,
+    progress: &mut dyn FnMut(u64),
+    cancel: &AtomicBool,
 ) -> Result<PathBuf, FileOpError> {
-    todo!("WS-A")
+    copy_staged_with(src, dst_dir, progress, cancel, &|_| {})
+}
+
+/// [`copy_staged`] with a hook that runs on the staged copy after the data is written and before
+/// it is verified (tests use it to damage the copy or look at the folder mid-copy).
+fn copy_staged_with(
+    src: &Path,
+    dst_dir: &Path,
+    progress: &mut dyn FnMut(u64),
+    cancel: &AtomicBool,
+    after_copy: &dyn Fn(&Path),
+) -> Result<PathBuf, FileOpError> {
+    let name = name_of(src)?;
+    let target = dst_dir.join(name);
+    if taken(&target) {
+        return Err(FileOpError::Exists);
+    }
+    let is_dir = fs::metadata(src).map_err(|e| io_err(&e))?.is_dir();
+    let staging = dst_dir.join(staging_os_name(name));
+    // A leftover of an earlier, interrupted copy of this same mod.
+    remove_staging(&staging);
+
+    let outcome = (|| {
+        let mut copier = Copier {
+            buf: vec![0; CHUNK],
+            progress,
+            cancel,
+        };
+        if is_dir {
+            copier.folder(src, &staging)?;
+        } else {
+            copier.file(src, &staging)?;
+        }
+        after_copy(&staging);
+        verify(src, &staging, is_dir, is_zip_name(name))?;
+        // The last look before the rename, which would replace a file that appeared meanwhile.
+        if taken(&target) {
+            return Err(FileOpError::Exists);
+        }
+        fs::rename(&staging, &target).map_err(|e| io_err(&e))
+    })();
+    match outcome {
+        Ok(()) => Ok(target),
+        Err(e) => {
+            remove_staging(&staging);
+            Err(e)
+        }
+    }
 }
 
 /// Moves a mod into `dst_dir`: a rename on the same drive; otherwise `copy_staged`, then the
 /// source goes to the Recycle Bin. A recycle failure after a good copy leaves both in place and
 /// returns the error, so nothing is lost.
 pub fn move_item(
-    _src: &Path,
-    _dst_dir: &Path,
-    _progress: &mut dyn FnMut(u64),
-    _cancel: &AtomicBool,
-    _recycler: &dyn Recycler,
+    src: &Path,
+    dst_dir: &Path,
+    progress: &mut dyn FnMut(u64),
+    cancel: &AtomicBool,
+    recycler: &dyn Recycler,
 ) -> Result<PathBuf, FileOpError> {
-    todo!("WS-A")
+    move_item_with(src, dst_dir, progress, cancel, recycler, &|from, to| {
+        fs::rename(from, to)
+    })
+}
+
+/// [`move_item`] with the rename injected, so the cross-drive path can be tested on one drive.
+fn move_item_with(
+    src: &Path,
+    dst_dir: &Path,
+    progress: &mut dyn FnMut(u64),
+    cancel: &AtomicBool,
+    recycler: &dyn Recycler,
+    rename: &dyn Fn(&Path, &Path) -> io::Result<()>,
+) -> Result<PathBuf, FileOpError> {
+    let target = dst_dir.join(name_of(src)?);
+    if taken(&target) {
+        return Err(FileOpError::Exists);
+    }
+    match rename(src, &target) {
+        Ok(()) => Ok(target),
+        Err(e) if e.kind() == io::ErrorKind::CrossesDevices => {
+            let copied = copy_staged(src, dst_dir, progress, cancel)?;
+            recycler.recycle(src).map_err(FileOpError::Recycle)?;
+            Ok(copied)
+        }
+        Err(e) => Err(io_err(&e)),
+    }
 }
