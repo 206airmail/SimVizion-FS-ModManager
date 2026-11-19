@@ -18,6 +18,12 @@ const allCodes: Record<ErrorCode, true> = {
   writesDisabled: true,
   nothingToUndo: true,
   noBackup: true,
+  recycleUnavailable: true,
+  notEnoughSpace: true,
+  busy: true,
+  cancelled: true,
+  targetChanged: true,
+  cannotRemoveProfile: true,
   internal: true,
 };
 const codes = Object.keys(allCodes) as ErrorCode[];

@@ -30,6 +30,9 @@ use crate::scan::{self, ModRecord};
 use crate::store::{path_key, CachedMod, FileStamp, Store, StoreError, StoredProfile};
 
 mod switching;
+mod transfer;
+
+pub use transfer::OpEnv;
 #[cfg(test)]
 mod tests;
 

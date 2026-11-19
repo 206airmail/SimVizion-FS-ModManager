@@ -33,8 +33,12 @@ zip = { version = "~9.7", default-features = false, features = ["deflate-flate2-
 [target."cfg(windows)".dependencies]
 # Documents via SHGetKnownFolderPath, so a redirected Documents folder is honoured.
 dirs = "7.0.0"
-# Process snapshot (ToolHelp) to tell whether the game or dedicated server is running.
-windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_System_Diagnostics_ToolHelp"] }
+# IFileOperation with a progress sink: recycle mods, refusing any permanent deletion (M5).
+windows = { version = "0.62", features = ["Win32_UI_Shell", "Win32_System_Com", "Win32_Foundation"] }
+# Needed directly by the windows crate's #[implement] macro for the progress sink.
+windows-core = "0.62"
+# Process snapshot (ToolHelp) for the running-game check; free disk space before copies.
+windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_Storage_FileSystem", "Win32_System_Diagnostics_ToolHelp"] }
 # Reads the Steam install path and Uninstall keys from the registry.
 winreg = "0.56.0"
 

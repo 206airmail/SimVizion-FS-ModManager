@@ -89,3 +89,11 @@ Why: the game rewrites this file itself. A write is refused while the game or th
 ## 2026-11-19: Debug builds write game files only when asked
 
 Why: a development session must not change the developer's real settings by accident. Debug builds refuse with `writesDisabled` unless `FSMM_ALLOW_GAME_WRITES=1` is set; release builds always write. Tests only ever write to temp folders. Rejected: no guard; a guard that also blocks release builds.
+
+## 2026-11-19: Roadmap renumbered — file operations first
+
+Why: the user chose to split the old M5. M5 is file operations (copy, move, remove to the Recycle Bin, profile rename and remove-from-list); M6 is Compare mode, savegame comparison, tags and notes; M7 is mod updates; M8 is the release. Rejected: everything in one milestone; the read-only views first.
+
+## 2026-11-19: Recycling refuses rather than deletes
+
+Why: the project rule is that nothing is deleted outright, and Microsoft does not document what `IFileOperation` does with an item it cannot recycle (reports say it deletes it). The recycler sets `FOFX_RECYCLEONDELETE` (plus `FOF_WANTNUKEWARNING`), vetoes in `PreDeleteItem` any delete Windows does not flag `TSF_DELETE_RECYCLE_IF_POSSIBLE` (the approach Electron uses), and counts an item as recycled only when its delete succeeded and a Recycle Bin item was created. Verified 2026-11-19: a file on a local disk went to the Recycle Bin; a file on `\\localhost\C$` (no Recycle Bin) was refused and stayed. Rejected: `SHFileOperation` with `FOF_ALLOWUNDO` (no veto possible); the `trash` crate (no veto, no recycled-item check).
