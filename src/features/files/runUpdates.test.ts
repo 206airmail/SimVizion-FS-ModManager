@@ -127,6 +127,27 @@ describe('runUpdates with several mods', () => {
     expect(calls).toBe(2);
   });
 
+  it('fails only that mod when the refusal is about the mod itself', async () => {
+    // The core refuses before writing anything when, say, the asset has another file name.
+    const install: Install = async (name, ids) => {
+      if (name !== 'FS25_B') return ok(ids);
+      throw new ApiFailure('notInstallable');
+    };
+    const result = await runUpdates(install, jobs, names, () => undefined, never);
+    expect(result.done).toEqual(['FS25_A', 'FS25_C']);
+    expect(result.failed).toEqual([{ modName: 'FS25_B', code: 'notInstallable' }]);
+  });
+
+  it('carries on past a first mod that cannot be installed', async () => {
+    const install: Install = async (name, ids) => {
+      if (name === 'FS25_A') throw new ApiFailure('folderMissing');
+      return ok(ids);
+    };
+    const result = await runUpdates(install, jobs, names, () => undefined, never);
+    expect(result.done).toEqual(['FS25_B', 'FS25_C']);
+    expect(result.failed).toEqual([{ modName: 'FS25_A', code: 'folderMissing' }]);
+  });
+
   it('lets a refusal of the first mod through', async () => {
     const install: Install = () => Promise.reject(new ApiFailure('updatesDisabled'));
     await expect(runUpdates(install, jobs, names, () => undefined, never)).rejects.toMatchObject({
