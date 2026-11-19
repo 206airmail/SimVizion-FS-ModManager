@@ -136,7 +136,7 @@ fn update_failed(e: impl std::fmt::Display) -> ApiError {
 
 /// A newer app version from the release feed (`plugins.updater.endpoints` in
 /// `tauri.conf.json`), or `None`. Refused with `UpdatesDisabled` while app updates are off;
-/// without `force`, nothing is asked within 24 hours of the last successful check.
+/// without `force`, nothing is asked within 24 hours of the last check that found no update.
 #[tauri::command]
 pub async fn check_app_update(
     app: AppHandle,
@@ -160,7 +160,11 @@ pub async fn check_app_update(
         .check()
         .await
         .map_err(update_failed)?;
-    blocking(move || library.note_app_update_check(SystemTime::now())).await?;
+    // Only "up to date" starts the 24-hour quiet period: an update found but not installed yet
+    // is offered again at the next start.
+    if found.is_none() {
+        blocking(move || library.note_app_update_check(SystemTime::now())).await?;
+    }
     let answer = found.as_ref().map(|update| AppUpdate {
         version: update.version.clone(),
         notes: update.body.clone(),
