@@ -19,6 +19,8 @@ png = "0.18.1"
 rayon = "1.12.0"
 # Parses modDesc.xml and gameSettings.xml (read-only).
 roxmltree = "0.21.2"
+# Profile registry and scan/thumbnail cache. Bundled so no system SQLite is needed.
+rusqlite = { version = "0.43.0", features = ["bundled"] }
 serde = { workspace = true }
 # Reads Epic Games launcher manifests (JSON).
 serde_json = { workspace = true }
