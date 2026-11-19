@@ -179,6 +179,8 @@ mod tests {
                 source: ModSource::Unknown,
                 update: UpdateState::Unknown,
                 also_in: Vec::new(),
+                tags: Vec::new(),
+                note: None,
             },
         }
     }

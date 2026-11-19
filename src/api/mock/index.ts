@@ -1,11 +1,14 @@
 import type {
   Api,
   ClashChoice,
+  Comparison,
   GameStatus,
   ModEntry,
   OpProgress,
   OpResult,
   Profile,
+  Savegame,
+  SavegameReport,
   ScanProgress,
   SwitchResult,
   TransferMode,
@@ -514,6 +517,29 @@ export function createMockApi(options: MockOptions = {}): Api {
       state().profiles = state().profiles.filter((p) => p.id !== profileId);
       state().mods.delete(profileId);
       settle(state());
+    },
+    // Plan M6: implemented by WS-C.
+    async compareProfiles(): Promise<Comparison> {
+      throw new ApiFailure('internal', 'notImplemented');
+    },
+    async listSavegames(): Promise<Savegame[]> {
+      throw new ApiFailure('internal', 'notImplemented');
+    },
+    async savegameReport(): Promise<SavegameReport> {
+      throw new ApiFailure('internal', 'notImplemented');
+    },
+    async checkSavegameFiles(): Promise<SavegameReport> {
+      throw new ApiFailure('internal', 'notImplemented');
+    },
+    async cancelHashing(): Promise<void> {},
+    async setTags(): Promise<string[]> {
+      throw new ApiFailure('internal', 'notImplemented');
+    },
+    async setNote(): Promise<void> {
+      throw new ApiFailure('internal', 'notImplemented');
+    },
+    async listTags(): Promise<string[]> {
+      return [];
     },
     async getGameStatus(): Promise<GameStatus> {
       await wait();

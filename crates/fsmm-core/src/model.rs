@@ -140,6 +140,10 @@ pub struct ModEntry {
     pub update: UpdateState,
     /// Ids of other profiles that contain a mod with the same name.
     pub also_in: Vec<String>,
+    /// The user's tags for this mod name (shared by every profile), sorted.
+    pub tags: Vec<String>,
+    /// The user's note for this mod name (shared by every profile).
+    pub note: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -224,6 +228,10 @@ pub enum ErrorCode {
     TargetChanged,
     /// The active folder and the game's default folder cannot be removed from the list.
     CannotRemoveProfile,
+    /// The savegame slot has no save (or the game's user folder was not found).
+    SavegameMissing,
+    /// The savegame's `careerSavegame.xml` exists but could not be read.
+    SavegameUnreadable,
     /// Anything unexpected; `detail` holds a technical message for a bug report.
     Internal,
 }
@@ -329,6 +337,134 @@ pub struct OpResult {
     pub done: Vec<String>,
     pub skipped: Vec<String>,
     pub failed: Vec<ItemFailure>,
+}
+
+/// How the mods with one name compare between two profiles.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub enum CompareState {
+    OnlyLeft,
+    OnlyRight,
+    /// Both have it, with different `modDesc` versions.
+    VersionDiffers,
+    /// Same version, but the contents differ (zip central directory or folder file list).
+    ContentDiffers,
+    Identical,
+}
+
+/// One profile's copy of a mod in a comparison.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct CompareSide {
+    pub mod_id: String,
+    pub summary: ModSummary,
+}
+
+/// One mod name in a comparison of two profiles.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct CompareRow {
+    pub mod_name: String,
+    /// The left copy's title, else the right's.
+    pub title: String,
+    pub left: Option<CompareSide>,
+    pub right: Option<CompareSide>,
+    pub state: CompareState,
+}
+
+/// Every mod name of two profiles, sorted by mod name (case-insensitive).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct Comparison {
+    pub left_profile_id: String,
+    pub right_profile_id: String,
+    pub rows: Vec<CompareRow>,
+}
+
+/// A savegame slot that holds a save. Read from `savegameN/careerSavegame.xml`, never written.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct Savegame {
+    /// The slot folder name, e.g. `savegame1`.
+    pub id: String,
+    pub slot: u32,
+    pub name: String,
+    pub map_title: String,
+    /// The map's mod name when the map is a mod (`mapId` is `<modName>.<id>`).
+    pub map_mod: Option<String>,
+    /// `YYYY-MM-DD` as the game writes it.
+    pub save_date: Option<String>,
+    /// The game's `playTime` statistic, in minutes.
+    pub play_minutes: Option<u32>,
+    #[ts(type = "number | null")]
+    pub money: Option<i64>,
+    pub mod_count: u32,
+}
+
+/// How one of a savegame's mods stands in a profile.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub enum SaveModState {
+    /// Same version, and the file hash matches the save's (or there is none to compare).
+    Present,
+    VersionDiffers,
+    /// Same version, but the zip's hash differs from the save's `fileHash`.
+    FileDiffers,
+    /// Same version; the file hash has not been computed yet.
+    HashPending,
+    Missing,
+    DlcInstalled,
+    DlcMissing,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct SaveModRow {
+    pub mod_name: String,
+    /// The title the save recorded.
+    pub title: String,
+    /// The version the save recorded.
+    pub saved_version: String,
+    /// Only the map mod is required; the game will not load the save without it.
+    pub required: bool,
+    pub state: SaveModState,
+    /// The profile's copy, if it has one.
+    pub installed: Option<CompareSide>,
+    /// Other profiles that have a mod with this name.
+    pub found_in: Vec<String>,
+}
+
+/// A savegame's mods checked against one profile.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct SavegameReport {
+    pub savegame_id: String,
+    pub profile_id: String,
+    /// Required first, then by mod name (case-insensitive).
+    pub rows: Vec<SaveModRow>,
+    /// Ids of the profile's mods the save does not use.
+    pub extras: Vec<String>,
+}
+
+/// Progress of hashing mod files, streamed while `checkSavegameFiles` runs.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct HashProgress {
+    pub done_files: u32,
+    pub total_files: u32,
+    #[ts(type = "number")]
+    pub done_bytes: u64,
+    #[ts(type = "number")]
+    pub total_bytes: u64,
 }
 
 /// The outcome of switching the active mod folder (or undoing a switch).

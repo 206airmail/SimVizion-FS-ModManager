@@ -6,6 +6,10 @@ import type { ModEntry } from './types/ModEntry';
 import type { Profile } from './types/Profile';
 import type { ScanProgress } from './types/ScanProgress';
 import type { ClashChoice } from './types/ClashChoice';
+import type { Comparison } from './types/Comparison';
+import type { HashProgress } from './types/HashProgress';
+import type { Savegame } from './types/Savegame';
+import type { SavegameReport } from './types/SavegameReport';
 import type { OpProgress } from './types/OpProgress';
 import type { OpResult } from './types/OpResult';
 import type { SwitchResult } from './types/SwitchResult';
@@ -14,9 +18,14 @@ import type { TransferPlan } from './types/TransferPlan';
 
 export type { ApiError } from './types/ApiError';
 export type { ClashChoice } from './types/ClashChoice';
+export type { CompareRow } from './types/CompareRow';
+export type { CompareSide } from './types/CompareSide';
+export type { CompareState } from './types/CompareState';
+export type { Comparison } from './types/Comparison';
 export type { Dependency } from './types/Dependency';
 export type { ErrorCode } from './types/ErrorCode';
 export type { GameStatus } from './types/GameStatus';
+export type { HashProgress } from './types/HashProgress';
 export type { ItemFailure } from './types/ItemFailure';
 export type { IssueKind } from './types/IssueKind';
 export type { ModEntry } from './types/ModEntry';
@@ -29,6 +38,10 @@ export type { OpProgress } from './types/OpProgress';
 export type { OpResult } from './types/OpResult';
 export type { Profile } from './types/Profile';
 export type { ScanProgress } from './types/ScanProgress';
+export type { Savegame } from './types/Savegame';
+export type { SavegameReport } from './types/SavegameReport';
+export type { SaveModRow } from './types/SaveModRow';
+export type { SaveModState } from './types/SaveModState';
 export type { ScanSummary } from './types/ScanSummary';
 export type { Severity } from './types/Severity';
 export type { SwitchResult } from './types/SwitchResult';
@@ -92,4 +105,27 @@ export interface Api {
   renameProfile(profileId: string, name: string): Promise<void>;
   /** Removes a profile from the list; the folder is untouched. */
   removeProfile(profileId: string): Promise<void>;
+  /** Every mod name of two profiles side by side, with how each pair compares. */
+  compareProfiles(leftProfileId: string, rightProfileId: string): Promise<Comparison>;
+  /** The saves in the game's savegame slots (read-only). */
+  listSavegames(): Promise<Savegame[]>;
+  /**
+   * A save's mods against a profile, at once: rows needing a file hash that is not cached yet
+   * are `hashPending`. Follow with `checkSavegameFiles`.
+   */
+  savegameReport(savegameId: string, profileId: string): Promise<SavegameReport>;
+  /** Hashes the pending zips (parallel, cached) and returns the final report. */
+  checkSavegameFiles(
+    savegameId: string,
+    profileId: string,
+    onProgress?: (progress: HashProgress) => void,
+  ): Promise<SavegameReport>;
+  /** Stops a running `checkSavegameFiles`; it rejects with `cancelled`. */
+  cancelHashing(): Promise<void>;
+  /** Replaces a mod name's tags (shared by every profile); returns the stored, sorted tags. */
+  setTags(modName: string, tags: string[]): Promise<string[]>;
+  /** Sets a mod name's note; an empty note clears it. */
+  setNote(modName: string, note: string): Promise<void>;
+  /** Every tag in use, sorted. */
+  listTags(): Promise<string[]>;
 }

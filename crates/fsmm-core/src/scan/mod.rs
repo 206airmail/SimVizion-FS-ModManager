@@ -152,6 +152,8 @@ pub fn read_mod(entry: &FolderEntry, profile_id: &str, languages: &[&str]) -> Mo
         source: ModSource::Unknown,
         update: UpdateState::Unknown,
         also_in: Vec::new(),
+        tags: Vec::new(),
+        note: None,
     };
     let mut icon = None;
 

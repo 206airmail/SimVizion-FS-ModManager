@@ -2,6 +2,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod commands;
+mod insight;
 mod switching;
 mod thumbs;
 mod transfer;
@@ -58,6 +59,14 @@ fn main() {
             transfer::cancel_operation,
             transfer::rename_profile,
             transfer::remove_profile,
+            insight::compare_profiles,
+            insight::list_savegames,
+            insight::savegame_report,
+            insight::check_savegame_files,
+            insight::cancel_hashing,
+            insight::set_tags,
+            insight::set_note,
+            insight::list_tags,
         ])
         .run(tauri::generate_context!())
         .expect("error while running SimVizion Mod Manager");

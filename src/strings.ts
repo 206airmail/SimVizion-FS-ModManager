@@ -50,6 +50,8 @@ export const strings = {
     targetChanged:
       'The mod or the target folder changed since the plan was made, so it was skipped.',
     cannotRemoveProfile: 'The active folder and the game default folder stay in the list.',
+    savegameMissing: 'That savegame could not be found. It may have been deleted in the game.',
+    savegameUnreadable: 'That savegame could not be read. The game may still be saving it.',
   } satisfies Record<ErrorCode, string>,
 
   actionFailed: {

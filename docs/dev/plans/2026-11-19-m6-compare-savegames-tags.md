@@ -31,7 +31,7 @@ Researched in the decompiled 1.25.1.0 scripts and checked against the real files
   - There are 20 slots. A slot folder can exist with no save (only `steam_autocloud.vdf`). Backups live in `savegameBackup/` and are out of scope.
 - **How the game matches mods.** It matches by modName only, which is the zip file name without `.zip`, and never checks version or hash for a single-player load.
   - DLCs are `pdlc_<name>`, from `<install>/pdlc/<name>.dlc`.
-  - Built-in content such as `FS25_precisionFarming` is listed but has no zip.
+  - Nothing is built in. The game's `internalMods` list is empty in 1.25.1.0, and `FS25_precisionFarming` is an ordinary zip in the user's `mods` folder (Stage 0 spike).
 - **`fileHash`** = `md5(zip bytes ++ modName as UTF-8)`; it was verified on 17 real zips. Folder mods have `fileHash=""`.
 
 ## Outcome (acceptance criteria)
@@ -48,8 +48,7 @@ Researched in the decompiled 1.25.1.0 scripts and checked against the real files
      - **Different version** (the save's version and the folder's);
      - **Different file** (same version, the hash differs from the save's `fileHash`);
      - **Missing** (not in this folder, with the folders that do have it);
-     - **DLC** (installed or not);
-     - **Game content** (built-in, never "missing").
+     - **DLC** (installed or not).
    - The map mod is marked required, and a missing required mod is called out first.
    - The folder's **extra mods** (loaded but not used by this save) appear in a collapsible list.
 3. **Copy missing.** For missing mods that exist in other folders, one button per source folder ("Copy 12 from Main Farm") opens the M5 transfer dialog with them preselected. Mods found nowhere are listed as "Not in any of your folders".
@@ -73,7 +72,7 @@ Researched in the decompiled 1.25.1.0 scripts and checked against the real files
 | 1 | **The Compare content check is a zip fingerprint:** a hash of the central directory's (name, CRC-32, size) list, computed during the scan, where the archive is already open. It is cached with the scan record, and a `SCAN_VERSION` bump re-reads records. Folder mods use their file list and sizes. | A full-file hash for compare (slow); size and mtime only (misses same-size changes, flags plain copies) |
 | 2 | **The savegame check uses the game's own `md5(zip ++ modName)`**, via the `md-5` crate (new dependency; the reason is to match the game's `fileHash`). It runs in parallel with rayon, streams in 4 MiB chunks, can be cancelled, and is cached in a new `cache.sqlite` table keyed by path_key, size, mtime and salt. | A faster non-MD5 hash (cannot match the save); hashing every mod |
 | 3 | **Savegames are discovered under `ctx.user_dir`** (`savegame1..N`, where a valid `careerSavegame.xml` exists). The file is parsed with roxmltree; nothing else in the save is read. | Reading `farms.xml` or other files (passwords; not needed); backups (later) |
-| 4 | **DLC and built-in classification.** `pdlc_*` means DLC, and it counts as installed when `<install>/pdlc/<name>.dlc` exists. Built-in content is recognised by a Stage 0 spike: the game install's internal mod location, found in the decompiled scripts. Until confirmed, a non-pdlc name with no zip anywhere whose save `fileHash` matches nothing counts as "Not in your folders". | Hard-coding a name list without a source |
+| 4 | **DLC classification.** `pdlc_*` means DLC, and it counts as installed when `<install>/pdlc/<name>.dlc` exists (`GameContext.install_dir`, added in Stage 0). Every other name is an ordinary mod. Stage 0 spike: the game's `internalMods` list is empty in 1.25.1.0. `FS25_precisionFarming` only gets game-supplied scripts; the mod itself is a normal zip. | A "game content" state (nothing qualifies); hard-coding names |
 | 5 | **Tags and notes are user metadata keyed by `lower(mod_name)`** in a `mod_meta` table (migration 4). `ModEntry` gains `tags` and `note`. The source links planned in M3 will use the same table later. | Per-file metadata; storing in `cache.sqlite` (disposable) |
 | 6 | **Copy actions reuse the M5 plan → execute flow and dialog**, preset with from, to and mod ids. No new file-operation code. | A separate copy path for Compare or Savegames |
 | 7 | **Compare is one screen with two pickers and a single merged table** (one row per mod name), not two panes. It is denser, sorts and filters as one list, and works at 960px. | Two side-by-side lists (poor at 960px; rows misalign) |
@@ -88,7 +87,7 @@ Researched in the decompiled 1.25.1.0 scripts and checked against the real files
   - `Comparison { left_profile_id, right_profile_id, rows }`
 - **Savegames:**
   - `Savegame { id ("savegame1"), slot, name, map_title, map_mod: Option<String>, save_date, play_minutes, money, mod_count }`
-  - `SaveModState { Present, VersionDiffers, FileDiffers, HashPending, Missing, DlcInstalled, DlcMissing, GameContent }`
+  - `SaveModState { Present, VersionDiffers, FileDiffers, HashPending, Missing, DlcInstalled, DlcMissing }`
   - `SaveModRow { mod_name, title, saved_version, required, state, installed: Option<CompareSide>, found_in: Vec<String> }`
   - `SavegameReport { savegame_id, profile_id, rows, extras: Vec<String> /* mod ids */ }`
   - `HashProgress { done_files, total_files, done_bytes, total_bytes }`
@@ -134,14 +133,14 @@ Researched in the decompiled 1.25.1.0 scripts and checked against the real files
     - `query.ts`: a tag filter; the library toolbar gets a Tag select.
   - **Entry points:** Tools → Compare; the profile menu "Compare with…"; Savegames.
   - **`TransferDialog`:** accepts a preset (from, to, mode, mod ids) and skips the target step when the target is given.
-  - **Mock:** saves built from the mock profiles' mods, with some missing, some versions changed, two DLCs and a built-in. Simulated hashing with progress. `?mock=slowHash`.
+  - **Mock:** saves built from the mock profiles' mods, with some missing, some versions changed, two DLCs (one installed, one not). Simulated hashing with progress. `?mock=slowHash`.
 
 ## Work plan (new branch `m6-compare-savegames-tags`)
 
 **Stage 0: coordinator (serial)**
 
 1. Create the branch, copy this plan, and push.
-2. Built-in content spike, about 30 minutes in the decompiled scripts and the install folder, read-only. Find where internal mods such as `FS25_precisionFarming` come from and how to recognise them. Record it in decisions.
+2. Built-in content spike: done. Nothing is built in (decision 4).
 3. Write the contract and run `gen:types`. Add the Api, the mock stubs, the core skeletons (`savegame`, `hash`, the library methods, the store migrations as `todo!()`) and the Tauri commands. Name the `md-5` dependency and its reason.
 4. Run the checks, commit and push.
 
@@ -149,7 +148,7 @@ Researched in the decompiled 1.25.1.0 scripts and checked against the real files
 
 | Workstream | Owns | Acceptance |
 |---|---|---|
-| **WS-A core** | `crates/fsmm-core/src/**` | <ul><li>Savegame parsing on fixtures: all the cases in Architecture.</li><li>`game_md5` equals a reference computed in the test.</li><li>The hash cache hits on an unchanged file and misses after a change.</li><li>Parallel progress is monotonic; cancel stops it.</li><li>Fingerprint: equal for two copies, different after one entry changes, and stable across a rescan.</li><li>`compare_profiles`: every state, case-insensitive names, folder mods.</li><li>Savegame report: every state, `found_in`, extras, the required map first, DLC installed or missing via a fake install dir, built-in content.</li><li>Tags and notes: set, clear, case-insensitive, survive a rescan, appear on `list_mods`.</li><li>The two migrations, from any older version.</li></ul> |
+| **WS-A core** | `crates/fsmm-core/src/**` | <ul><li>Savegame parsing on fixtures: all the cases in Architecture.</li><li>`game_md5` equals a reference computed in the test.</li><li>The hash cache hits on an unchanged file and misses after a change.</li><li>Parallel progress is monotonic; cancel stops it.</li><li>Fingerprint: equal for two copies, different after one entry changes, and stable across a rescan.</li><li>`compare_profiles`: every state, case-insensitive names, folder mods.</li><li>Savegame report: every state, `found_in`, extras, the required map first, DLC installed or missing via a fake install dir.</li><li>Tags and notes: set, clear, case-insensitive, survive a rescan, appear on `list_mods`.</li><li>The two migrations, from any older version.</li></ul> |
 | **WS-C frontend** | `src/**` | <ul><li>The Compare and Savegames screens; tags and notes UI; tag filter; the `TransferDialog` preset; entry points.</li><li>Every state in the mock.</li><li>Unit tests: compare filters and counts, report grouping, the tag editor logic, the tag filter, preset transfers.</li><li>Orca browser review at 1280×720 and 960×640.</li></ul> |
 
 **Stage 2: coordinator.** Merge both, review the whole diff, run the real-app check, update docs, and open the PR.
