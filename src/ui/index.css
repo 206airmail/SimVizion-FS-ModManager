@@ -897,3 +897,145 @@
   background: var(--sv-selected-bg);
   border-color: var(--sv-selected-border);
 }
+
+/* ---------- Checkbox and switch (controls.md) ---------- */
+.sv-checkbox,
+.sv-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 28px;
+  cursor: pointer;
+}
+.sv-checkbox {
+  position: relative;
+}
+.sv-checkbox__input {
+  position: absolute;
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+.sv-checkbox__box {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border: 1px solid var(--sv-border);
+  border-radius: 3px;
+  background: var(--sv-recessed);
+  color: var(--sv-window);
+  transition:
+    background-color 100ms ease-out,
+    border-color 100ms ease-out;
+}
+.sv-checkbox:hover .sv-checkbox__box {
+  border-color: var(--sv-hover-border);
+}
+.sv-checkbox__input:checked + .sv-checkbox__box {
+  background: var(--sv-lime);
+  border-color: var(--sv-lime);
+}
+.sv-checkbox:hover .sv-checkbox__input:checked + .sv-checkbox__box {
+  background: var(--sv-primary-hover);
+  border-color: var(--sv-primary-hover);
+}
+/* A dark box gets a teal border; a lime box also gets a ring, as on the primary button. */
+.sv-checkbox__input:focus-visible + .sv-checkbox__box {
+  border-color: var(--sv-teal);
+}
+.sv-checkbox__input:checked:focus-visible + .sv-checkbox__box {
+  outline: 2px solid var(--sv-teal);
+  outline-offset: 1px;
+  box-shadow: inset 0 0 0 2px var(--sv-window);
+}
+.sv-checkbox__input:disabled,
+.sv-checkbox__input:disabled + .sv-checkbox__box {
+  cursor: not-allowed;
+}
+.sv-checkbox__input:disabled + .sv-checkbox__box {
+  background: var(--sv-disabled-bg);
+  border-color: var(--sv-disabled-border);
+  color: var(--sv-disabled-text);
+}
+.sv-checkbox__label {
+  min-width: 0;
+}
+
+.sv-switch {
+  padding: 0;
+  border: 0;
+  background: none;
+  text-align: left;
+}
+.sv-switch__track {
+  position: relative;
+  flex: none;
+  width: 32px;
+  height: 18px;
+  border: 1px solid var(--sv-border);
+  border-radius: 9px;
+  background: var(--sv-recessed);
+  transition:
+    background-color 100ms ease-out,
+    border-color 100ms ease-out;
+}
+.sv-switch__thumb {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--sv-text-secondary);
+  transition:
+    transform 100ms ease-out,
+    background-color 100ms ease-out;
+}
+.sv-switch:hover .sv-switch__track {
+  border-color: var(--sv-hover-border);
+}
+.sv-switch[aria-checked='true'] .sv-switch__track {
+  background: var(--sv-lime);
+  border-color: var(--sv-lime);
+}
+.sv-switch[aria-checked='true'] .sv-switch__thumb {
+  background: var(--sv-window);
+  transform: translateX(14px);
+}
+.sv-switch:hover[aria-checked='true'] .sv-switch__track {
+  background: var(--sv-primary-hover);
+  border-color: var(--sv-primary-hover);
+}
+.sv-switch:focus-visible {
+  outline: none;
+}
+.sv-switch:focus-visible .sv-switch__track {
+  border-color: var(--sv-teal);
+}
+.sv-switch[aria-checked='true']:focus-visible .sv-switch__track {
+  outline: 2px solid var(--sv-teal);
+  outline-offset: 1px;
+  box-shadow: inset 0 0 0 2px var(--sv-window);
+}
+.sv-switch:disabled {
+  cursor: not-allowed;
+}
+.sv-switch:disabled .sv-switch__track {
+  background: var(--sv-disabled-bg);
+  border-color: var(--sv-disabled-border);
+}
+.sv-switch:disabled .sv-switch__thumb {
+  background: var(--sv-disabled-text);
+}
+@media (prefers-reduced-motion: reduce) {
+  .sv-checkbox__box,
+  .sv-switch__track,
+  .sv-switch__thumb {
+    transition: none;
+  }
+}

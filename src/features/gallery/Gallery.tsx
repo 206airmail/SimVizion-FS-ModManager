@@ -16,6 +16,7 @@ import {
 import { useState, type ReactNode } from 'react';
 import { strings } from '../../strings';
 import { Button, IconButton } from '../../ui/Button';
+import { Checkbox } from '../../ui/Checkbox';
 import { Dialog } from '../../ui/Dialog';
 import { Banner, EmptyState } from '../../ui/Feedback';
 import { Menu, type MenuItem } from '../../ui/Menu';
@@ -23,6 +24,7 @@ import { Pill } from '../../ui/Pill';
 import { SearchField } from '../../ui/SearchField';
 import { SegmentedControl } from '../../ui/SegmentedControl';
 import { Select } from '../../ui/Select';
+import { Switch } from '../../ui/Switch';
 
 type DialogSample = 'confirm' | 'destructive' | 'busy' | 'scrolling' | null;
 
@@ -47,6 +49,7 @@ const menuItems: MenuItem[] = [
 ];
 
 export function Gallery() {
+  const [sampleOn, setSampleOn] = useState(true);
   const [search, setSearch] = useState('tractor');
   const [kind, setKind] = useState<'all' | 'vehicle' | 'map'>('all');
   const [status, setStatus] = useState<'all' | 'issues' | 'updates'>('issues');
@@ -153,6 +156,24 @@ export function Gallery() {
         <Pill tone="error">Not a mod</Pill>
         <Pill tone="success">Verified</Pill>
         <span className="mm-active-mark">Active</span>
+      </Group>
+
+      <Group title="Checkbox and switch (lime when on; Space toggles; teal border on focus)">
+        <Checkbox checked={sampleOn} onChange={setSampleOn}>
+          Main Farm
+        </Checkbox>
+        <Checkbox checked={false} onChange={() => undefined}>
+          Unticked
+        </Checkbox>
+        <Checkbox checked disabled onChange={() => undefined}>
+          Disabled
+        </Checkbox>
+        <Switch checked={sampleOn} onChange={setSampleOn}>
+          Check for mod updates online
+        </Switch>
+        <Switch checked={false} disabled onChange={() => undefined}>
+          Disabled
+        </Switch>
       </Group>
 
       <Group title="Banners" column>

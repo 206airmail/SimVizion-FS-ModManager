@@ -56,7 +56,7 @@ export function describeSource(source: ModSource): string {
     case 'gitHub':
       return `${strings.sources.gitHub} ${source.owner}/${source.repo}`;
     case 'manual':
-      return strings.sources.manual;
+      return `${strings.sources.manual}: ${source.host}`;
     case 'unknown':
       return strings.sources.unknown;
   }
