@@ -11,6 +11,7 @@ use std::fs::{self, File};
 use std::io::{self, BufReader, Read};
 use std::path::{Path, PathBuf};
 
+use md5::{Digest, Md5};
 use serde::{Deserialize, Serialize};
 use zip::ZipArchive;
 
@@ -167,6 +168,51 @@ impl ModContainer {
         self.names.iter().map(String::as_str)
     }
 
+    /// A stable hash of what the mod contains, for telling copies of a mod apart without
+    /// reading any file content (plan M6 decision 1). Internal: never shown, only compared.
+    ///
+    /// For a zip it is taken from the central directory, which is already read: the sorted list
+    /// of (entry name, CRC-32, uncompressed size). For a folder it is the sorted list of
+    /// (relative path, size), with CRC 0. The bytes hashed with MD5 are a kind byte (`z` or `f`),
+    /// then per entry the name length (u32 LE), the name (UTF-8), the CRC (u32 LE) and the size
+    /// (u64 LE). Names are the normalised ones of [`ModContainer::names`], so a zip and its
+    /// unpacked folder differ by the kind byte (the folder has no CRCs to compare).
+    pub fn fingerprint(&self) -> String {
+        let (kind, mut entries): (u8, Vec<(&str, u32, u64)>) = match &self.backing {
+            Backing::Zip { archive, zip_index } => (
+                b'z',
+                zip_index
+                    .iter()
+                    .zip(&self.names)
+                    .filter_map(|(&i, name)| {
+                        let entry = archive.by_index_data(i).ok()?;
+                        Some((name.as_str(), entry.crc32(), entry.size()))
+                    })
+                    .collect(),
+            ),
+            Backing::Folder { root } => (
+                b'f',
+                self.names
+                    .iter()
+                    .map(|name| {
+                        let size = fs::metadata(root.join(name)).map_or(0, |m| m.len());
+                        (name.as_str(), 0, size)
+                    })
+                    .collect(),
+            ),
+        };
+        entries.sort_unstable();
+        let mut hasher = Md5::new();
+        hasher.update([kind]);
+        for (name, crc, size) in entries {
+            hasher.update(u32::try_from(name.len()).unwrap_or(u32::MAX).to_le_bytes());
+            hasher.update(name.as_bytes());
+            hasher.update(crc.to_le_bytes());
+            hasher.update(size.to_le_bytes());
+        }
+        format!("{:x}", hasher.finalize())
+    }
+
     /// The stored name matching `rel`, ignoring case and `\` vs `/`.
     pub fn find(&self, rel: &str) -> Option<String> {
         self.position(rel).map(|i| self.names[i].clone())
@@ -320,6 +366,104 @@ mod tests {
             c.read("../outside.txt", 10),
             Err(ReadError::NotFound)
         ));
+    }
+
+    fn zip_fingerprint(
+        dir: &Path,
+        name: &str,
+        entries: &[(&str, &[u8])],
+        method: Method,
+    ) -> String {
+        let path = dir.join(name);
+        write_zip(&path, entries, method);
+        ModContainer::open(&path).unwrap().fingerprint()
+    }
+
+    #[test]
+    fn the_fingerprint_ignores_file_name_entry_order_and_compression() {
+        let dir = tempfile::tempdir().unwrap();
+        let entries: [(&str, &[u8]); 3] = [
+            ("modDesc.xml", b"<modDesc/>"),
+            ("a/b.lua", b"print(1)"),
+            ("c.txt", b"hello"),
+        ];
+        let base = zip_fingerprint(dir.path(), "one.zip", &entries, Method::Deflated);
+        assert_eq!(base.len(), 32);
+        assert_eq!(
+            base,
+            zip_fingerprint(dir.path(), "other name.zip", &entries, Method::Deflated)
+        );
+        assert_eq!(
+            base,
+            zip_fingerprint(dir.path(), "stored.zip", &entries, Method::Stored)
+        );
+        let reversed = [entries[2], entries[1], entries[0]];
+        assert_eq!(
+            base,
+            zip_fingerprint(dir.path(), "reversed.zip", &reversed, Method::Deflated)
+        );
+        // Directory entries are not content.
+        let with_dir: [(&str, &[u8]); 4] = [("a/", b""), entries[0], entries[1], entries[2]];
+        assert_eq!(
+            base,
+            zip_fingerprint(dir.path(), "dirs.zip", &with_dir, Method::Deflated)
+        );
+    }
+
+    #[test]
+    fn the_fingerprint_changes_with_content_name_or_size() {
+        let dir = tempfile::tempdir().unwrap();
+        let base_entries: [(&str, &[u8]); 2] = [("modDesc.xml", b"<modDesc/>"), ("x.txt", b"aaaa")];
+        let base = zip_fingerprint(dir.path(), "base.zip", &base_entries, Method::Deflated);
+        let variants: [[(&str, &[u8]); 2]; 4] = [
+            // Same size, one byte different: only the CRC differs.
+            [("modDesc.xml", b"<modDesc/>"), ("x.txt", b"aaab")],
+            [("modDesc.xml", b"<modDesc/>"), ("x.txt", b"aaaaa")],
+            [("modDesc.xml", b"<modDesc/>"), ("y.txt", b"aaaa")],
+            [("modDesc.xml", b"<modDesc/>"), ("X.txt", b"aaaa")],
+        ];
+        for (i, entries) in variants.iter().enumerate() {
+            let other =
+                zip_fingerprint(dir.path(), &format!("v{i}.zip"), entries, Method::Deflated);
+            assert_ne!(base, other, "variant {i}");
+        }
+    }
+
+    #[test]
+    fn a_folder_fingerprint_follows_names_and_sizes_and_differs_from_a_zips() {
+        let dir = tempfile::tempdir().unwrap();
+        let make = |name: &str, entries: &[(&str, &[u8])]| {
+            let root = dir.path().join(name);
+            write_folder(&root, entries);
+            ModContainer::open(&root).unwrap().fingerprint()
+        };
+        let entries: [(&str, &[u8]); 2] = [("modDesc.xml", b"<modDesc/>"), ("sub/x.txt", b"abc")];
+        let a = make("a", &entries);
+        assert_eq!(a, make("b", &entries));
+        assert_eq!(
+            a,
+            ModContainer::open(&dir.path().join("a"))
+                .unwrap()
+                .fingerprint()
+        );
+        assert_ne!(
+            a,
+            make(
+                "c",
+                &[("modDesc.xml", b"<modDesc/>"), ("sub/x.txt", b"abcd")]
+            )
+        );
+        assert_ne!(
+            a,
+            make(
+                "d",
+                &[("modDesc.xml", b"<modDesc/>"), ("sub/y.txt", b"abc")]
+            )
+        );
+        assert_ne!(
+            a,
+            zip_fingerprint(dir.path(), "z.zip", &entries, Method::Stored)
+        );
     }
 
     #[test]
