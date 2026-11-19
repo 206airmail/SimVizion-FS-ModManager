@@ -1,5 +1,16 @@
 import { describe, expect, it } from 'vitest';
-import { formatBytes, formatDate, formatDateTime, tailPath } from './format';
+import { formatBytes, formatDate, formatDateTime, formatTime, tailPath } from './format';
+
+describe('formatTime', () => {
+  it('shows the time of day in the given zone', () => {
+    expect(formatTime('2026-11-19T10:42:30Z', 'en-GB', 'UTC')).toBe('10:42');
+    expect(formatTime('2026-11-19T10:42:30Z', 'en-GB', 'Asia/Tokyo')).toBe('19:42');
+  });
+
+  it('returns text that is not a time unchanged', () => {
+    expect(formatTime('soon')).toBe('soon');
+  });
+});
 
 describe('formatBytes', () => {
   it.each([
