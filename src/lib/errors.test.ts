@@ -3,7 +3,55 @@ import type { ErrorCode } from '../api';
 import { strings } from '../strings';
 import { ApiFailure, describeError, isErrorCode } from './errors';
 
-const codes: ErrorCode[] = ['profileNotFound', 'folderMissing', 'folderUnreadable', 'internal'];
+// A Record forces this list to name every generated ErrorCode: a new code fails the type check
+// until it is listed here (and worded in strings.errors).
+const allCodes: Record<ErrorCode, true> = {
+  profileNotFound: true,
+  folderMissing: true,
+  folderUnreadable: true,
+  gameRunning: true,
+  serverRunning: true,
+  settingsMissing: true,
+  settingsUnreadable: true,
+  settingsChanged: true,
+  writeFailed: true,
+  writesDisabled: true,
+  nothingToUndo: true,
+  noBackup: true,
+  internal: true,
+};
+const codes = Object.keys(allCodes) as ErrorCode[];
+
+describe('error wording', () => {
+  it('has calm, distinct wording for every error code and no stray codes', () => {
+    expect(Object.keys(strings.errors).sort()).toEqual([...codes].sort());
+    for (const code of codes) {
+      const text = strings.errors[code];
+      expect(text.length, code).toBeGreaterThan(20);
+      expect(text, code).not.toContain(code);
+      expect(text, code).not.toMatch(/!|\bERROR\b/);
+    }
+  });
+
+  it('says nothing was changed for every refusal that leaves the file alone', () => {
+    const untouched: ErrorCode[] = [
+      'gameRunning',
+      'serverRunning',
+      'settingsMissing',
+      'settingsUnreadable',
+      'settingsChanged',
+      'writeFailed',
+      'writesDisabled',
+      'nothingToUndo',
+      'noBackup',
+    ];
+    for (const code of untouched) {
+      expect(strings.errors[code], code).toMatch(
+        /nothing was (changed|written|restored)|original file is unchanged/,
+      );
+    }
+  });
+});
 
 describe('describeError', () => {
   it('words each error code with its own message', () => {

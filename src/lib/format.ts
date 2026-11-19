@@ -41,6 +41,23 @@ export function formatDate(iso: string, locale?: string): string {
   }).format(date);
 }
 
+/**
+ * Date and time of an ISO 8601 timestamp, in the user's locale and local time zone unless given
+ * (a backup's time of day is only meaningful to the user in their own clock).
+ */
+export function formatDateTime(iso: string, locale?: string, timeZone?: string): string {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return iso;
+  return new Intl.DateTimeFormat(locale, {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+    timeZone,
+  }).format(date);
+}
+
 /** Shortens a path to its last segments, keeping the separator style it came with. */
 export function tailPath(path: string, keep = 2): string {
   const separator = path.includes('\\') ? '\\' : '/';
