@@ -420,6 +420,8 @@
 .mm-inspector__description {
   color: var(--sv-text-readable-secondary);
   overflow-wrap: anywhere;
+  /* Real descriptions use line breaks for lists and changelogs. */
+  white-space: pre-line;
 }
 .mm-inspector__footer-gap {
   flex: 1;
