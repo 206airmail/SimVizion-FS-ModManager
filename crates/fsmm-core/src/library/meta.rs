@@ -75,7 +75,7 @@ impl Library {
 }
 
 /// The key a mod name is stored under: trimmed and lower-cased, like every name match here.
-fn name_key(mod_name: &str) -> Result<String, ApiError> {
+pub(super) fn name_key(mod_name: &str) -> Result<String, ApiError> {
     let key = mod_name.trim().to_lowercase();
     if key.is_empty() {
         return Err(invalid(INVALID_NAME));
