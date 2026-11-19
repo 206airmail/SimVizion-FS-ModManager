@@ -1,0 +1,111 @@
+/* Global foundations: document sizing, typography, scrollbars, focus, motion. */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  overflow: hidden;
+}
+
+.sv-app {
+  background: var(--sv-window);
+  color: var(--sv-text);
+  font: 400 13px/1.3 var(--sv-font);
+  letter-spacing: 0;
+  scrollbar-width: thin;
+  scrollbar-color: var(--sv-scroll-thumb) var(--sv-scroll-track);
+  -webkit-user-select: none;
+  user-select: none;
+  cursor: default;
+}
+
+.sv-app ::-webkit-scrollbar {
+  width: var(--sv-scrollbar-width);
+  height: var(--sv-scrollbar-width);
+}
+.sv-app ::-webkit-scrollbar-track {
+  background: var(--sv-scroll-track);
+}
+.sv-app ::-webkit-scrollbar-thumb {
+  background: var(--sv-scroll-thumb);
+  border-radius: 10px;
+}
+.sv-app ::-webkit-scrollbar-thumb:hover {
+  background: var(--sv-scroll-thumb-hover);
+}
+.sv-app ::-webkit-scrollbar-thumb:active {
+  background: var(--sv-scroll-thumb-active);
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+  color: inherit;
+  letter-spacing: inherit;
+}
+
+h1,
+h2,
+h3,
+p {
+  margin: 0;
+}
+
+/* Text the user may want to copy stays selectable. */
+.sv-selectable {
+  -webkit-user-select: text;
+  user-select: text;
+  cursor: text;
+}
+
+.sv-num {
+  font-variant-numeric: tabular-nums;
+}
+
+.sv-truncate {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.sv-visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.sv-inline-code {
+  padding: 1px 2px;
+  border-radius: 4px;
+  background: var(--sv-recessed);
+  color: var(--sv-text);
+  font: 400 12px/1.3 var(--sv-font-mono);
+  overflow-wrap: anywhere;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
