@@ -20,6 +20,18 @@ const PNG_SIGNATURE: [u8; 8] = [0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A];
 pub const THUMBNAIL_EDGE: u32 = 256;
 /// Largest width or height accepted from an icon header.
 pub const MAX_DIMENSION: u32 = 8192;
+/// Largest `width * height` decoded (64 MiB of RGBA). Real icons are at most 1024×1024.
+pub const MAX_PIXELS: u64 = 4096 * 4096;
+
+/// Rejects images whose decoded size would exceed [`MAX_PIXELS`].
+fn check_pixel_budget(width: u32, height: u32) -> Result<(), IconError> {
+    if u64::from(width) * u64::from(height) > MAX_PIXELS {
+        return Err(IconError::Malformed(format!(
+            "{width}x{height} is more than {MAX_PIXELS} pixels"
+        )));
+    }
+    Ok(())
+}
 
 /// 8-bit RGBA pixels, row-major, no padding.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -129,6 +141,19 @@ mod tests {
             rel: rel.to_string(),
             kind,
         }
+    }
+
+    #[test]
+    fn pixel_budget_caps_decoded_size_below_the_dimension_cap() {
+        assert!(check_pixel_budget(4096, 4096).is_ok());
+        assert!(check_pixel_budget(8192, 1).is_ok());
+        assert!(matches!(
+            check_pixel_budget(4097, 4096),
+            Err(IconError::Malformed(_))
+        ));
+        // Each edge is within MAX_DIMENSION, but the area is over budget.
+        let big = dds(8192, 4096, 1, DdsFormat::FourCc(*b"DXT1"), &[]);
+        assert!(matches!(decode_dds(&big), Err(IconError::Malformed(m)) if m.contains("pixels")));
     }
 
     #[test]

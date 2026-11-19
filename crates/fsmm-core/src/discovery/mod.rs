@@ -9,6 +9,7 @@ use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 
+use crate::container::ModContainer;
 use crate::model::GameStatus;
 
 mod gamelog;
@@ -306,7 +307,8 @@ pub fn suggest_profiles(user_dir: &Path) -> Vec<PathBuf> {
     out
 }
 
-/// True at the first `*.zip` file or subfolder with a `modDesc.xml`.
+/// True at the first subfolder or `*.zip` file with a `modDesc.xml` at its root. Other zips
+/// do not count: the GIANTS debugger keeps a `gameSource.zip` in its own folder.
 fn holds_a_mod(folder: &Path) -> bool {
     let Ok(entries) = fs::read_dir(folder) else {
         return false;
@@ -318,6 +320,7 @@ fn holds_a_mod(folder: &Path) -> bool {
         } else {
             path.extension()
                 .is_some_and(|x| x.eq_ignore_ascii_case("zip"))
+                && ModContainer::open(&path).is_ok_and(|c| c.find("modDesc.xml").is_some())
         }
     })
 }

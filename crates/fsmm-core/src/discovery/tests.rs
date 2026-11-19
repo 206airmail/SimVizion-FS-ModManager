@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 use tempfile::TempDir;
 
 use super::*;
+use crate::testutil::{write_zip, Method};
 
 const STEAM_USER_KEY: &str = r"Software\Valve\Steam";
 const STEAM_MACHINE_KEY: &str = r"SOFTWARE\WOW6432Node\Valve\Steam";
@@ -648,9 +649,21 @@ fn suggest_profiles_offers_mods_and_folders_that_hold_mods() {
     let tmp = tempfile::tempdir().unwrap();
     let user = tmp.path();
     fs::create_dir_all(user.join("mods")).unwrap();
-    // Holds a zip.
+    // Holds a mod zip.
     fs::create_dir_all(user.join("zeta pack")).unwrap();
-    fs::write(user.join("zeta pack/FS25_A.ZIP"), b"").unwrap();
+    write_zip(
+        &user.join("zeta pack/FS25_A.ZIP"),
+        &[("modDesc.xml", b"<modDesc/>")],
+        Method::Stored,
+    );
+    // Holds zips that are not mods: the GIANTS debugger's game source, and an unreadable file.
+    fs::create_dir_all(user.join("debugger")).unwrap();
+    write_zip(
+        &user.join("debugger/gameSource.zip"),
+        &[("dataS/scripts/main.lua", b"--")],
+        Method::Stored,
+    );
+    fs::write(user.join("debugger/broken.zip"), b"").unwrap();
     // Holds an unpacked mod.
     fs::create_dir_all(user.join("Alpha/FS25_Folder")).unwrap();
     fs::write(user.join("Alpha/FS25_Folder/modDesc.xml"), b"").unwrap();
