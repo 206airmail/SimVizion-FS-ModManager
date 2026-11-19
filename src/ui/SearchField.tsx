@@ -27,7 +27,7 @@ export function SearchField({
 
   return (
     <div className={cx('sv-search', size === 'compact' && 'sv-search--compact', className)}>
-      <Icon icon={Search} size={14} className="sv-search__icon" />
+      <Icon icon={Search} size={16} className="sv-search__icon" />
       <input
         ref={inputRef}
         className="sv-search__input"
@@ -56,7 +56,7 @@ export function SearchField({
             inputRef.current?.focus();
           }}
         >
-          <Icon icon={X} size={14} />
+          <Icon icon={X} size={16} />
         </button>
       )}
     </div>

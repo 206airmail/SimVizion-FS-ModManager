@@ -108,7 +108,7 @@ export function RenameProfileDialog({
         <span id={messageId} className={shown !== null ? 'mm-field-error' : 'mm-field-hint'}>
           {shown !== null ? (
             <>
-              <Icon icon={CircleAlert} size={14} className="sv-tone-error" />
+              <Icon icon={CircleAlert} size={16} className="sv-tone-error" />
               {shown === 'empty' ? t.renameEmpty : t.renameTooLong(PROFILE_NAME_MAX)}
             </>
           ) : (

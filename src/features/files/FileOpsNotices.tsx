@@ -60,7 +60,7 @@ function ProgressBanner({ running, store, onCancel }: ProgressBannerProps) {
 
   return (
     <div className="sv-banner sv-banner--info mm-op" role="group" aria-label={p.label}>
-      <Icon icon={kindIcons[running.kind]} size={20} className="sv-banner__icon" />
+      <Icon icon={kindIcons[running.kind]} size={22} className="sv-banner__icon" />
       <div className="sv-banner__body">
         <div className="sv-banner__title">{title}</div>
         {/* Announced once; the numbers below change too often to be read out. */}

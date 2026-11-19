@@ -61,7 +61,7 @@ export function SegmentedControl<T extends string>({
             className={cx('sv-segmented__option', segment.icon && 'sv-segmented__option--icon')}
             onClick={() => onChange(segment.value)}
           >
-            {segment.icon ? <Icon icon={segment.icon} size={14} /> : segment.label}
+            {segment.icon ? <Icon icon={segment.icon} size={16} /> : segment.label}
             {segment.count !== undefined && (
               <span className="sv-count-chip sv-num">{segment.count}</span>
             )}

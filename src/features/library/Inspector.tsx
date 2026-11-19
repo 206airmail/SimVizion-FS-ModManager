@@ -179,7 +179,7 @@ function ModDetails({
                 </span>
                 {mod.source.type === 'unknown' && (
                   <button type="button" className="sv-link-button">
-                    <Icon icon={Link2} size={14} />
+                    <Icon icon={Link2} size={16} />
                     {t.linkSource}
                   </button>
                 )}
@@ -205,7 +205,7 @@ function ModDetails({
                   <li key={dependency.modName} className="mm-dep">
                     <Icon
                       icon={dependency.satisfied ? CircleCheck : TriangleAlert}
-                      size={14}
+                      size={16}
                       className={dependency.satisfied ? 'sv-tone-success' : 'sv-tone-warning'}
                     />
                     <span className="mm-dep__name sv-truncate sv-selectable">
