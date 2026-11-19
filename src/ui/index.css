@@ -725,3 +725,171 @@
   outline: 1px solid var(--sv-teal);
   outline-offset: 2px;
 }
+
+/* ---------- Dialog (dialogs-popups.md: modal) ---------- */
+.sv-dialog-layer {
+  position: fixed;
+  z-index: 50;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: transparent;
+}
+/* Black at 50%, no blur. The window colour is near-black and tokens.css has no backdrop token for
+   dialogs, so the tint is the window colour at 60%. */
+.sv-dialog-backdrop {
+  position: absolute;
+  inset: 0;
+  background: var(--sv-window);
+  opacity: 0.6;
+  animation: sv-dialog-fade 150ms ease-out;
+}
+@keyframes sv-dialog-fade {
+  from {
+    opacity: 0;
+  }
+}
+.sv-dialog {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: 560px;
+  /* Centred, then lifted 32px; the height clamp keeps the whole dialog inside the window. */
+  max-height: calc(100% - 64px);
+  margin-top: -64px;
+  border: 1px solid var(--sv-border);
+  border-radius: var(--sv-radius-dialog);
+  background: var(--sv-panel);
+  box-shadow: var(--sv-shadow);
+  outline: none;
+}
+.sv-dialog--small {
+  max-width: 420px;
+}
+.sv-dialog--large {
+  max-width: 720px;
+}
+.sv-dialog__header {
+  flex: none;
+  padding: 12px 12px 0;
+}
+.sv-dialog__title {
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1.3;
+}
+.sv-dialog__body {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 0;
+  padding: 12px;
+  overflow: auto;
+  color: var(--sv-text-readable-secondary);
+}
+.sv-dialog__footer {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  padding: 12px;
+  border-top: 1px solid var(--sv-border);
+}
+
+/* ---------- Menu (dialogs-popups.md: context menu) ---------- */
+.sv-menu {
+  position: fixed;
+  z-index: 60;
+  top: 0;
+  left: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 160px;
+  max-width: 320px;
+  padding: 6px;
+  border: 1px solid var(--sv-border);
+  border-radius: var(--sv-radius-panel);
+  background: var(--sv-elevated);
+  box-shadow: var(--sv-shadow);
+  opacity: 0;
+  outline: none;
+  transition: opacity 75ms ease-out;
+}
+.sv-menu__row {
+  display: flex;
+  flex-direction: column;
+}
+.sv-menu__row > .sv-tooltip-anchor {
+  display: flex;
+}
+.sv-menu__row > .sv-tooltip-anchor > .sv-menu__item {
+  flex: 1;
+}
+.sv-menu__divider {
+  height: 1px;
+  margin: 4px 8px;
+  background: var(--sv-border);
+}
+.sv-menu__item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  height: 28px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: var(--sv-radius-control);
+  background: transparent;
+  color: var(--sv-text);
+  text-align: left;
+  white-space: nowrap;
+  cursor: pointer;
+  /* Space for the keyboard indicator is always reserved so rows never shift. */
+  box-shadow: inset 3px 0 0 transparent;
+}
+.sv-menu__item > svg {
+  flex: none;
+  color: var(--sv-text-secondary);
+}
+.sv-menu__label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sv-menu__item:hover,
+.sv-menu__item:focus {
+  outline: none;
+  background: var(--sv-hover-bg);
+}
+.sv-menu__item:focus {
+  box-shadow: inset 3px 0 0 var(--sv-selected-border);
+}
+.sv-menu__item--destructive,
+.sv-menu__item--destructive > svg {
+  color: var(--sv-error);
+}
+.sv-menu__item[aria-disabled='true'],
+.sv-menu__item[aria-disabled='true'] > svg {
+  color: var(--sv-disabled-text);
+  cursor: not-allowed;
+}
+.sv-menu__item[aria-disabled='true']:hover {
+  background: transparent;
+}
+.sv-menu__item[aria-disabled='true']:focus {
+  background: var(--sv-hover-bg);
+}
+
+/* A button that opens a menu or popup shows it is open with the selected treatment. */
+.sv-button[aria-haspopup][aria-expanded='true'] {
+  background: var(--sv-selected-bg);
+  border-color: var(--sv-selected-border);
+}
