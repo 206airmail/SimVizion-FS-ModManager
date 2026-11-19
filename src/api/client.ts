@@ -10,6 +10,9 @@
 //   ?mock=clashes         every copy or move plan has clashes (the target gets older twins)
 //   ?mock=recycleFails    Remove and Replace fail with recycleUnavailable for some mods
 //   ?mock=lowSpace        a copy or move plan shows too little free space on the target drive
+//   ?mock=slowHash        checking a savegame's files takes about 5 s (progress and Cancel)
+//   ?mock=brokenSave      adds a fourth savegame that cannot be read (savegameUnreadable)
+//   ?mock=noSaves         the game has no savegames (the empty state)
 // Copies and removals in the mock run at about 40 MB/s, so big mods take seconds and can be cancelled.
 
 import { isTauri } from '@tauri-apps/api/core';
@@ -31,6 +34,9 @@ function createApi(): Api {
     clashes: modes.has('clashes'),
     recycleFails: modes.has('recycleFails'),
     lowSpace: modes.has('lowSpace'),
+    slowHash: modes.has('slowHash'),
+    brokenSave: modes.has('brokenSave'),
+    noSaves: modes.has('noSaves'),
   });
   if (!modes.has('empty')) return mock;
   // Spread drops nothing the interface needs: `sampleData` is a plain property.

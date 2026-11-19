@@ -9,6 +9,8 @@ export interface LibraryQuery {
   search: string;
   kind: KindFilter;
   status: StatusFilter;
+  /** Only mods with this tag (compared without regard to case); '' for every mod. */
+  tag: string;
   sortKey: SortKey;
   sortDirection: SortDirection;
 }
@@ -17,6 +19,7 @@ export const defaultQuery: LibraryQuery = {
   search: '',
   kind: 'all',
   status: 'all',
+  tag: '',
   sortKey: 'title',
   sortDirection: 'asc',
 };
@@ -92,11 +95,13 @@ function compareBy(sortKey: SortKey, versions: Map<ModEntry, string[]>) {
 /** Filters, then sorts. Never mutates `mods`. */
 export function queryMods(mods: readonly ModEntry[], query: LibraryQuery): ModEntry[] {
   const terms = query.search.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  const tag = query.tag.toLowerCase();
   const result: ModEntry[] = [];
   for (const mod of mods) {
     if (query.kind !== 'all' && mod.kind !== query.kind) continue;
     if (query.status === 'issues' && mod.issues.length === 0) continue;
     if (query.status === 'updates' && mod.update.type !== 'available') continue;
+    if (tag !== '' && !mod.tags.some((candidate) => candidate.toLowerCase() === tag)) continue;
     if (terms.length > 0 && !matchesSearch(mod, terms)) continue;
     result.push(mod);
   }
