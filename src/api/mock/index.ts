@@ -1,4 +1,4 @@
-import type { Api, GameStatus, ModEntry, Profile, ScanProgress } from '..';
+import type { Api, GameStatus, ModEntry, Profile, ScanProgress, SwitchResult } from '..';
 import { ApiFailure } from '../../lib/errors';
 import { GAME_DESC_VERSION } from './entry';
 import { createRng } from './prng';
@@ -163,6 +163,19 @@ export function createMockApi(options: MockOptions = {}): Api {
     },
     async openProfileFolder(): Promise<void> {},
     async showModInFolder(): Promise<void> {},
+    // WS-C: switching, undo and restore in memory.
+    async setActiveProfile(): Promise<SwitchResult> {
+      throw new ApiFailure('writesDisabled');
+    },
+    async undoSwitch(): Promise<SwitchResult> {
+      throw new ApiFailure('nothingToUndo');
+    },
+    async latestSettingsBackup(): Promise<string | null> {
+      return null;
+    },
+    async restoreSettingsBackup(): Promise<void> {
+      throw new ApiFailure('noBackup');
+    },
     async getGameStatus(): Promise<GameStatus> {
       await wait();
       const testing = dataset(stress).profiles.find((p) => p.id === 'testing');

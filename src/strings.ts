@@ -28,6 +28,18 @@ export const strings = {
     folderMissing: 'The folder could not be found. It may have been moved or deleted.',
     folderUnreadable: 'The folder could not be read. You may not have permission to open it.',
     internal: 'Something went wrong inside the app.',
+    gameRunning:
+      'Close Farming Simulator 25 first. The active folder cannot change while the game is running.',
+    serverRunning:
+      'Stop the dedicated server first. The active folder cannot change while it is running.',
+    settingsMissing: 'gameSettings.xml was not found. Start the game once so it creates the file.',
+    settingsUnreadable: 'gameSettings.xml could not be read, so it was left untouched.',
+    settingsChanged:
+      'gameSettings.xml changed while the app was working, so nothing was written. Try again.',
+    writeFailed: 'gameSettings.xml could not be written. The original file is unchanged.',
+    writesDisabled: 'This development build does not write game files.',
+    nothingToUndo: 'There is nothing to undo any more.',
+    noBackup: 'No backup of gameSettings.xml was found.',
   } satisfies Record<ErrorCode, string>,
 
   actionFailed: {
