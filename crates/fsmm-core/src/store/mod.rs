@@ -79,6 +79,17 @@ const LIBRARY_MIGRATIONS: &[&str] = &[
         updated_at TEXT
     );
 ",
+    // Update source links and the online settings (plan M7). `source_url` is the user's own link
+    // to a page for the mod (one per lower-cased name, like tags); a row now also exists while it
+    // holds only a link. `app_settings` holds `updates.enabled`, `updates.lastCheck` and
+    // `updates.retryAfter`.
+    "
+    ALTER TABLE mod_meta ADD COLUMN source_url TEXT;
+    CREATE TABLE app_settings (
+        key   TEXT PRIMARY KEY,
+        value TEXT NOT NULL
+    );
+",
 ];
 
 /// Migrations of `cache.sqlite`. The cache is disposable, so a file that fails to open or
@@ -119,6 +130,30 @@ const CACHE_MIGRATIONS: &[&str] = &[
     // The content fingerprint of a scan record (plan M6 decision 1). Records written before
     // it existed have the default, and `scan::SCAN_VERSION` makes them misses anyway.
     "ALTER TABLE mods ADD COLUMN fingerprint TEXT NOT NULL DEFAULT '';",
+    // Update check results and whole-zip SHA-256s (plan M7). `catalog_matches` has one row per
+    // lower-cased mod name, replaced as a whole by each successful check. `file_sha256` is apart
+    // from `file_hashes` (a different hash, no salt, one per file), keyed by path and valid while
+    // the file's size and mtime are unchanged, as in M6.
+    "
+    CREATE TABLE catalog_matches (
+        name_key        TEXT PRIMARY KEY,
+        catalog_id      TEXT NOT NULL,
+        tech_name       TEXT,
+        latest_version  TEXT,
+        download_source TEXT,
+        download_url    TEXT,
+        modhub_url      TEXT,
+        github_url      TEXT,
+        matched_by      TEXT NOT NULL,
+        checked_at      TEXT NOT NULL
+    );
+    CREATE TABLE file_sha256 (
+        path_key TEXT PRIMARY KEY,
+        size     INTEGER NOT NULL,
+        mtime_ns INTEGER NOT NULL,
+        sha256   TEXT NOT NULL
+    );
+",
 ];
 
 /// The key two paths share when they name the same file or folder: lower-cased, `/` turned
@@ -218,11 +253,63 @@ pub struct CachedMod {
     pub fingerprint: String,
 }
 
-/// The user's tags and note for one mod name (`library.sqlite`, table `mod_meta`).
+/// The user's tags, note and source link for one mod name (`library.sqlite`, table `mod_meta`).
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ModMeta {
     pub tags: Vec<String>,
     pub note: Option<String>,
+    /// The page the user linked by hand (plan M7).
+    pub source_url: Option<String>,
+}
+
+/// How the update catalog matched a mod.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MatchedBy {
+    /// By the mod's name.
+    Name,
+    /// By the SHA-256 of its zip (a renamed copy).
+    Hash,
+}
+
+impl MatchedBy {
+    fn as_str(self) -> &'static str {
+        match self {
+            MatchedBy::Name => "name",
+            MatchedBy::Hash => "hash",
+        }
+    }
+
+    fn parse(text: &str) -> Option<Self> {
+        match text {
+            "name" => Some(MatchedBy::Name),
+            "hash" => Some(MatchedBy::Hash),
+            _ => None,
+        }
+    }
+}
+
+/// What the last successful update check learned about one mod name (`cache.sqlite`, table
+/// `catalog_matches`). The URLs are the ones the catalog gave, validated by the check; the
+/// version and the download are the catalog's *latest*.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CatalogMatch {
+    /// The local mod name, lower-cased (a hash match is stored under the local name, not the
+    /// catalog's).
+    pub name_key: String,
+    pub catalog_id: String,
+    /// The catalog's own name for the mod.
+    pub tech_name: Option<String>,
+    pub latest_version: Option<String>,
+    /// `github` or `modhub`, when the catalog has a direct download.
+    pub download_source: Option<String>,
+    pub download_url: Option<String>,
+    /// The ModHub mod page, when known.
+    pub modhub_url: Option<String>,
+    /// The GitHub repository page, when known.
+    pub github_url: Option<String>,
+    pub matched_by: MatchedBy,
+    /// ISO time of the check.
+    pub checked_at: String,
 }
 
 /// A file whose cached game hash is wanted: the path, the stamp the hash must have been
@@ -780,35 +867,38 @@ impl Store {
     /// have a tag or a note, so this is small and one query serves a whole listing.
     pub fn all_mod_meta(&self) -> Result<HashMap<String, ModMeta>, StoreError> {
         let conn = lock(&self.library);
-        let mut stmt = conn.prepare_cached("SELECT name_key, tags, note FROM mod_meta")?;
+        let mut stmt =
+            conn.prepare_cached("SELECT name_key, tags, note, source_url FROM mod_meta")?;
         let rows = stmt.query_map([], |r| {
             Ok((
                 r.get::<_, String>(0)?,
                 r.get::<_, String>(1)?,
                 r.get::<_, Option<String>>(2)?,
+                r.get::<_, Option<String>>(3)?,
             ))
         })?;
         let mut out = HashMap::new();
         for row in rows {
-            let (key, tags, note) = row?;
+            let (key, tags, note, source_url) = row?;
             out.insert(
                 key,
                 ModMeta {
                     tags: serde_json::from_str(&tags)?,
                     note,
+                    source_url,
                 },
             );
         }
         Ok(out)
     }
 
-    /// The tags and note of one mod name; empty when it has none.
+    /// The tags, note and link of one mod name; empty when it has none.
     pub fn mod_meta(&self, name_key: &str) -> Result<ModMeta, StoreError> {
         let conn = lock(&self.library);
         read_meta(&conn, name_key)
     }
 
-    /// Replaces a mod name's tags. The row is removed when no tag and no note remain.
+    /// Replaces a mod name's tags. The row is removed when no tag, note or link remains.
     pub fn set_mod_tags(&self, name_key: &str, tags: &[String]) -> Result<(), StoreError> {
         let json = serde_json::to_string(tags)?;
         let mut conn = lock(&self.library);
@@ -823,8 +913,8 @@ impl Store {
         Ok(())
     }
 
-    /// Sets (or with `None` clears) a mod name's note. The row is removed when no tag and no
-    /// note remain.
+    /// Sets (or with `None` clears) a mod name's note. The row is removed when no tag, note or
+    /// link remains.
     pub fn set_mod_note(&self, name_key: &str, note: Option<&str>) -> Result<(), StoreError> {
         let mut conn = lock(&self.library);
         let tx = conn.transaction()?;
@@ -834,6 +924,161 @@ impl Store {
             params![name_key, note, now_rfc3339()],
         )?;
         drop_empty_meta(&tx, name_key)?;
+        tx.commit()?;
+        Ok(())
+    }
+
+    /// Sets (or with `None` clears) the user's source link for a mod name. The row is removed
+    /// when no tag, note or link remains.
+    pub fn set_mod_source_url(&self, name_key: &str, url: Option<&str>) -> Result<(), StoreError> {
+        let mut conn = lock(&self.library);
+        let tx = conn.transaction()?;
+        tx.execute(
+            "INSERT INTO mod_meta (name_key, source_url, updated_at) VALUES (?1, ?2, ?3) \
+             ON CONFLICT (name_key) DO UPDATE SET source_url = ?2, updated_at = ?3",
+            params![name_key, url, now_rfc3339()],
+        )?;
+        drop_empty_meta(&tx, name_key)?;
+        tx.commit()?;
+        Ok(())
+    }
+
+    // ---- settings (library.sqlite) ----
+
+    /// One app setting, if set.
+    pub fn app_setting(&self, key: &str) -> Result<Option<String>, StoreError> {
+        let conn = lock(&self.library);
+        Ok(conn
+            .query_row(
+                "SELECT value FROM app_settings WHERE key = ?1",
+                [key],
+                |r| r.get::<_, String>(0),
+            )
+            .optional()?)
+    }
+
+    /// Sets an app setting, or with `None` removes it.
+    pub fn set_app_setting(&self, key: &str, value: Option<&str>) -> Result<(), StoreError> {
+        let conn = lock(&self.library);
+        match value {
+            Some(value) => conn.execute(
+                "INSERT INTO app_settings (key, value) VALUES (?1, ?2) \
+                 ON CONFLICT (key) DO UPDATE SET value = ?2",
+                params![key, value],
+            )?,
+            None => conn.execute("DELETE FROM app_settings WHERE key = ?1", [key])?,
+        };
+        Ok(())
+    }
+
+    // ---- update check results (cache.sqlite) ----
+
+    /// Every catalog match of the last successful check, by lower-cased mod name. One query
+    /// serves a whole listing.
+    pub fn catalog_matches(&self) -> Result<HashMap<String, CatalogMatch>, StoreError> {
+        let conn = lock(&self.cache);
+        let mut stmt = conn.prepare_cached(&format!("{SELECT_MATCH} FROM catalog_matches"))?;
+        let rows = stmt.query_map([], match_from_row)?;
+        let mut out = HashMap::new();
+        for row in rows {
+            // A row this build cannot read (a newer `matched_by`) is just a miss.
+            if let Some(found) = row? {
+                out.insert(found.name_key.clone(), found);
+            }
+        }
+        Ok(out)
+    }
+
+    /// The catalog match of one lower-cased mod name.
+    pub fn catalog_match(&self, name_key: &str) -> Result<Option<CatalogMatch>, StoreError> {
+        let conn = lock(&self.cache);
+        let row = conn
+            .query_row(
+                &format!("{SELECT_MATCH} FROM catalog_matches WHERE name_key = ?1"),
+                [name_key],
+                match_from_row,
+            )
+            .optional()?;
+        Ok(row.flatten())
+    }
+
+    /// Replaces every stored match with these, in one transaction.
+    pub fn replace_catalog_matches(&self, matches: &[CatalogMatch]) -> Result<(), StoreError> {
+        let mut conn = lock(&self.cache);
+        let tx = conn.transaction()?;
+        tx.execute("DELETE FROM catalog_matches", [])?;
+        {
+            let mut stmt = tx.prepare_cached(
+                "INSERT OR REPLACE INTO catalog_matches (name_key, catalog_id, tech_name, \
+                 latest_version, download_source, download_url, modhub_url, github_url, \
+                 matched_by, checked_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+            )?;
+            for m in matches {
+                stmt.execute(params![
+                    m.name_key,
+                    m.catalog_id,
+                    m.tech_name,
+                    m.latest_version,
+                    m.download_source,
+                    m.download_url,
+                    m.modhub_url,
+                    m.github_url,
+                    m.matched_by.as_str(),
+                    m.checked_at
+                ])?;
+            }
+        }
+        tx.commit()?;
+        Ok(())
+    }
+
+    // ---- whole-zip SHA-256 (cache.sqlite) ----
+
+    /// The cached SHA-256 of each file, in the order asked: `Some` only when it was stored for
+    /// exactly this size and mtime.
+    pub fn cached_sha256(
+        &self,
+        items: &[(&Path, FileStamp)],
+    ) -> Result<Vec<Option<String>>, StoreError> {
+        let conn = lock(&self.cache);
+        let mut stmt = conn.prepare_cached(
+            "SELECT sha256 FROM file_sha256 WHERE path_key = ?1 AND size = ?2 AND mtime_ns = ?3",
+        )?;
+        items
+            .iter()
+            .map(|(path, stamp)| {
+                Ok(stmt
+                    .query_row(
+                        params![
+                            path_key(path),
+                            size_i64(stamp.size),
+                            mtime_ns(stamp.modified)
+                        ],
+                        |r| r.get::<_, String>(0),
+                    )
+                    .optional()?)
+            })
+            .collect()
+    }
+
+    /// Stores SHA-256s in one transaction, replacing any for the same path.
+    pub fn put_sha256(&self, items: &[((&Path, FileStamp), &str)]) -> Result<(), StoreError> {
+        let mut conn = lock(&self.cache);
+        let tx = conn.transaction()?;
+        {
+            let mut stmt = tx.prepare_cached(
+                "INSERT OR REPLACE INTO file_sha256 (path_key, size, mtime_ns, sha256) \
+                 VALUES (?1, ?2, ?3, ?4)",
+            )?;
+            for ((path, stamp), sha256) in items {
+                stmt.execute(params![
+                    path_key(path),
+                    size_i64(stamp.size),
+                    mtime_ns(stamp.modified),
+                    sha256
+                ])?;
+            }
+        }
         tx.commit()?;
         Ok(())
     }
@@ -859,24 +1104,54 @@ impl Store {
 fn read_meta(conn: &Connection, name_key: &str) -> Result<ModMeta, StoreError> {
     let row = conn
         .query_row(
-            "SELECT tags, note FROM mod_meta WHERE name_key = ?1",
+            "SELECT tags, note, source_url FROM mod_meta WHERE name_key = ?1",
             [name_key],
-            |r| Ok((r.get::<_, String>(0)?, r.get::<_, Option<String>>(1)?)),
+            |r| {
+                Ok((
+                    r.get::<_, String>(0)?,
+                    r.get::<_, Option<String>>(1)?,
+                    r.get::<_, Option<String>>(2)?,
+                ))
+            },
         )
         .optional()?;
     match row {
-        Some((tags, note)) => Ok(ModMeta {
+        Some((tags, note, source_url)) => Ok(ModMeta {
             tags: serde_json::from_str(&tags)?,
             note,
+            source_url,
         }),
         None => Ok(ModMeta::default()),
     }
 }
 
-/// Deletes the row of a mod name that has neither a tag nor a note.
+const SELECT_MATCH: &str = "SELECT name_key, catalog_id, tech_name, latest_version, \
+     download_source, download_url, modhub_url, github_url, matched_by, checked_at";
+
+fn match_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Option<CatalogMatch>> {
+    let matched_by: String = row.get(8)?;
+    let Some(matched_by) = MatchedBy::parse(&matched_by) else {
+        return Ok(None);
+    };
+    Ok(Some(CatalogMatch {
+        name_key: row.get(0)?,
+        catalog_id: row.get(1)?,
+        tech_name: row.get(2)?,
+        latest_version: row.get(3)?,
+        download_source: row.get(4)?,
+        download_url: row.get(5)?,
+        modhub_url: row.get(6)?,
+        github_url: row.get(7)?,
+        matched_by,
+        checked_at: row.get(9)?,
+    }))
+}
+
+/// Deletes the row of a mod name that has no tag, no note and no source link.
 fn drop_empty_meta(conn: &Connection, name_key: &str) -> Result<(), StoreError> {
     conn.execute(
-        "DELETE FROM mod_meta WHERE name_key = ?1 AND tags = '[]' AND note IS NULL",
+        "DELETE FROM mod_meta \
+         WHERE name_key = ?1 AND tags = '[]' AND note IS NULL AND source_url IS NULL",
         [name_key],
     )?;
     Ok(())

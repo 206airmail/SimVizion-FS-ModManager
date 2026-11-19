@@ -14,10 +14,22 @@
 //! The traits below make one request per call, so tests count requests and batching is done by
 //! [`lookup_all`] and [`by_hash_all`].
 
+use std::collections::HashSet;
 use std::fmt;
 use std::io::Write;
 use std::sync::atomic::AtomicBool;
 use std::time::SystemTime;
+
+#[cfg(test)]
+pub(crate) mod fakes;
+mod http;
+#[cfg(test)]
+mod tests;
+mod url;
+mod version;
+
+pub use http::Http;
+pub(crate) use url::{download_file_name, manual_link_host};
 
 /// The catalog's base URL.
 pub const SILO_BASE: &str = "https://silo-api.hllmr.com";
@@ -139,49 +151,73 @@ pub trait Web: Send + Sync {
 /// Every name looked up in batches of [`LOOKUP_BATCH`], one request at a time: blanks and
 /// repeats (case-insensitive) dropped first. Stops at the first error.
 pub fn lookup_all(
-    _catalog: &dyn Catalog,
-    _tech_names: &[String],
+    catalog: &dyn Catalog,
+    tech_names: &[String],
 ) -> Result<Vec<LookupResult>, NetError> {
-    todo!("WS-A")
+    let mut seen = HashSet::new();
+    let names: Vec<String> = tech_names
+        .iter()
+        .map(|name| name.trim())
+        .filter(|name| !name.is_empty() && seen.insert(name.to_lowercase()))
+        .map(str::to_string)
+        .collect();
+    let mut out = Vec::new();
+    for batch in names.chunks(LOOKUP_BATCH) {
+        out.extend(catalog.lookup(batch)?);
+    }
+    Ok(out)
 }
 
 /// Every hash asked in batches of [`BY_HASH_BATCH`], one request at a time, lower-cased and
 /// deduplicated. `Ok(None)` when the server has no by-hash route.
 pub fn by_hash_all(
-    _catalog: &dyn Catalog,
-    _hashes: &[String],
+    catalog: &dyn Catalog,
+    hashes: &[String],
 ) -> Result<Option<HashAnswers>, NetError> {
-    todo!("WS-A")
+    let mut seen = HashSet::new();
+    let hashes: Vec<String> = hashes
+        .iter()
+        .map(|hash| hash.trim().to_ascii_lowercase())
+        .filter(|hash| !hash.is_empty() && seen.insert(hash.clone()))
+        .collect();
+    let mut out = Vec::new();
+    for batch in hashes.chunks(BY_HASH_BATCH) {
+        match catalog.by_hash(batch)? {
+            Some(answers) => out.extend(answers),
+            None => return Ok(None),
+        }
+    }
+    Ok(Some(out))
 }
 
 /// Versions are equal ignoring a leading `v`, the separators `.`, `-`, `_`, `+`, leading zeros
 /// and trailing `.0`s (`v1.2.0` == `1.2`). Versions not starting with a digit only match
 /// exactly. (Silo's `versions_equal`.)
-pub fn versions_equal(_a: &str, _b: &str) -> bool {
-    todo!("WS-A")
+pub fn versions_equal(a: &str, b: &str) -> bool {
+    version::equal(a, b)
 }
 
 /// `Some(true)` when `candidate` is a newer version than `installed` (numeric segments compared
 /// left to right, missing ones as 0), `Some(false)` when equal or older, `None` when either does
 /// not parse (then the app says nothing about an update).
-pub fn is_newer(_candidate: &str, _installed: &str) -> Option<bool> {
-    todo!("WS-A")
+pub fn is_newer(candidate: &str, installed: &str) -> Option<bool> {
+    version::newer(candidate, installed)
 }
 
 /// API calls: only `https://silo-api.hllmr.com/...`.
-pub fn allowed_api_url(_url: &str) -> bool {
-    todo!("WS-A")
+pub fn allowed_api_url(url: &str) -> bool {
+    url::is_api_url(url)
 }
 
 /// Pages fetched by the app: only `https://www.farming-simulator.com/mod.php?...`.
-pub fn allowed_page_url(_url: &str) -> bool {
-    todo!("WS-A")
+pub fn allowed_page_url(url: &str) -> bool {
+    url::is_page_url(url)
 }
 
 /// Downloads and their redirects: `https` on `github.com`, `objects.githubusercontent.com`,
 /// `release-assets.githubusercontent.com` or `cdn<digits>.giants-software.com`.
-pub fn allowed_download_url(_url: &str) -> bool {
-    todo!("WS-A")
+pub fn allowed_download_url(url: &str) -> bool {
+    url::is_download_url(url)
 }
 
 /// What a ModHub mod page says about its download.
@@ -199,56 +235,21 @@ pub struct ModHubDownload {
 /// `https://cdn<n>.giants-software.com/modHub/storage/<8-digit mod_id>/<File>.zip` whose mod id
 /// is `mod_id`. `None` when there is not exactly one such link (never a guess). Screenshots on
 /// the same storage path are not links and are ignored. See `fixtures/modhub_page.html`.
-pub fn modhub_download(_html: &str, _mod_id: &str) -> Option<ModHubDownload> {
-    todo!("WS-A")
+pub fn modhub_download(html: &str, mod_id: &str) -> Option<ModHubDownload> {
+    url::modhub_download_of(html, mod_id)
 }
 
 /// The ModHub mod id in a page URL (`mod.php?mod_id=331515&...`).
-pub fn modhub_id(_page_url: &str) -> Option<String> {
-    todo!("WS-A")
+pub fn modhub_id(page_url: &str) -> Option<String> {
+    url::modhub_id_of(page_url)
 }
 
 /// `(owner, repo)` of a `https://github.com/<owner>/<repo>[/...]` URL.
-pub fn github_repo(_url: &str) -> Option<(String, String)> {
-    todo!("WS-A")
+pub fn github_repo(url: &str) -> Option<(String, String)> {
+    url::github_repo_of(url, false)
 }
 
-/// The real clients: SiloAPI and the web, over one shared agent with timeouts, the User-Agent
-/// and the allow-list. Built by the Tauri layer; tests use fakes.
-pub struct Http {
-    _private: (),
-}
-
-impl Http {
-    /// `app_version` goes into the User-Agent: `SimVizion-Mod-Manager/<version>`.
-    pub fn new(_app_version: &str) -> Self {
-        todo!("WS-A")
-    }
-}
-
-impl Catalog for Http {
-    fn lookup(&self, _tech_names: &[String]) -> Result<Vec<LookupResult>, NetError> {
-        todo!("WS-A")
-    }
-    fn by_hash(&self, _hashes: &[String]) -> Result<Option<HashAnswers>, NetError> {
-        todo!("WS-A")
-    }
-    fn detail(&self, _id: &str) -> Result<Option<CatalogMod>, NetError> {
-        todo!("WS-A")
-    }
-}
-
-impl Web for Http {
-    fn fetch_page(&self, _url: &str) -> Result<String, NetError> {
-        todo!("WS-A")
-    }
-    fn download(
-        &self,
-        _url: &str,
-        _sink: &mut dyn Write,
-        _progress: &mut dyn FnMut(u64),
-        _cancel: &AtomicBool,
-    ) -> Result<u64, NetError> {
-        todo!("WS-A")
-    }
+/// Like [`github_repo`], for a link the user pasted, which may be `http`.
+pub(crate) fn github_repo_lenient(url: &str) -> Option<(String, String)> {
+    url::github_repo_of(url, true)
 }
