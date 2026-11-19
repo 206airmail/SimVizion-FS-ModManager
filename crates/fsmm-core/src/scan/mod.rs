@@ -131,6 +131,14 @@ pub fn enumerate(dir: &Path) -> io::Result<(Vec<FolderEntry>, Vec<Skipped>)> {
     Ok((entries, skipped))
 }
 
+/// The `<version>` of a mod's root `modDesc.xml`, read exactly as [`read_mod`] reads it (plan M7:
+/// a downloaded update is checked with it). `None` when there is no readable `modDesc.xml`; an
+/// empty string when it has no `<version>`.
+pub(crate) fn desc_version(container: &mut ModContainer) -> Option<String> {
+    container.find("modDesc.xml")?;
+    moddesc::read_desc(container, &[]).ok().map(|d| d.version)
+}
+
 /// Reads one mod. Never fails: an unreadable mod becomes a record with a `NotAMod` issue.
 /// `languages` is the preference order for titles and descriptions; `en` is always tried
 /// after it.

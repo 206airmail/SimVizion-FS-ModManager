@@ -620,9 +620,15 @@ fn the_real_library_migrations_apply_from_every_older_version() {
             .query_row("SELECT version FROM schema_version", [], |r| r.get(0))
             .unwrap();
         assert_eq!(version, LIBRARY_MIGRATIONS.len() as i64, "from {from}");
-        for table in ["profiles", "ops", "file_ops", "mod_meta"] {
+        for table in ["profiles", "ops", "file_ops", "mod_meta", "app_settings"] {
             assert!(table_exists(&conn, table), "{table} from {from}");
         }
+        // Migration 5 added the link column; a note written before it keeps its row.
+        conn.execute(
+            "INSERT OR REPLACE INTO mod_meta (name_key, source_url) VALUES ('x', 'https://x.example')",
+            [],
+        )
+        .unwrap();
         if from >= 1 {
             let kept: i64 = conn
                 .query_row("SELECT COUNT(*) FROM profiles", [], |r| r.get(0))
@@ -650,7 +656,13 @@ fn the_real_cache_migrations_apply_from_every_older_version() {
             .query_row("SELECT version FROM schema_version", [], |r| r.get(0))
             .unwrap();
         assert_eq!(version, CACHE_MIGRATIONS.len() as i64, "from {from}");
-        for table in ["mods", "thumbnails", "file_hashes"] {
+        for table in [
+            "mods",
+            "thumbnails",
+            "file_hashes",
+            "catalog_matches",
+            "file_sha256",
+        ] {
             assert!(table_exists(&conn, table), "{table} from {from}");
         }
         // The fingerprint column exists, and an old row gets the empty default.
@@ -850,4 +862,247 @@ fn metadata_survives_reopening() {
 fn store_is_send_and_sync() {
     fn assert_send_sync<T: Send + Sync>() {}
     assert_send_sync::<Store>();
+}
+
+// ---------------------------------------------------------------- M7: links, settings, matches
+
+#[test]
+fn a_note_written_before_migration_five_survives_it() {
+    let mut conn = Connection::open_in_memory().unwrap();
+    migrate(&mut conn, &LIBRARY_MIGRATIONS[..4]).unwrap();
+    conn.execute(
+        "INSERT INTO mod_meta (name_key, tags, note) VALUES ('fs25_a', '[\"x\"]', 'kept')",
+        [],
+    )
+    .unwrap();
+    migrate(&mut conn, LIBRARY_MIGRATIONS).unwrap();
+    let (tags, note, link): (String, Option<String>, Option<String>) = conn
+        .query_row(
+            "SELECT tags, note, source_url FROM mod_meta WHERE name_key = 'fs25_a'",
+            [],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+        )
+        .unwrap();
+    assert_eq!(
+        (tags.as_str(), note.as_deref(), link),
+        ("[\"x\"]", Some("kept"), None)
+    );
+}
+
+#[test]
+fn a_source_link_is_stored_per_name_key_and_cleared_with_none() {
+    let store = Store::open_in_memory().unwrap();
+    assert_eq!(store.mod_meta("fs25_a").unwrap().source_url, None);
+    store
+        .set_mod_source_url("fs25_a", Some("https://example.com/a"))
+        .unwrap();
+    assert_eq!(
+        store.mod_meta("fs25_a").unwrap().source_url.as_deref(),
+        Some("https://example.com/a")
+    );
+    assert_eq!(
+        store.all_mod_meta().unwrap()["fs25_a"]
+            .source_url
+            .as_deref(),
+        Some("https://example.com/a")
+    );
+    store
+        .set_mod_source_url("fs25_a", Some("https://example.com/b"))
+        .unwrap();
+    assert_eq!(store.all_mod_meta().unwrap().len(), 1);
+    assert_eq!(
+        store.mod_meta("fs25_a").unwrap().source_url.as_deref(),
+        Some("https://example.com/b")
+    );
+    store.set_mod_source_url("fs25_a", None).unwrap();
+    assert!(store.all_mod_meta().unwrap().is_empty());
+    // Clearing what was never set leaves no row.
+    store.set_mod_source_url("fs25_b", None).unwrap();
+    assert!(store.all_mod_meta().unwrap().is_empty());
+}
+
+#[test]
+fn a_link_only_row_survives_tag_and_note_edits_and_keeps_them_apart() {
+    let store = Store::open_in_memory().unwrap();
+    store
+        .set_mod_source_url("fs25_a", Some("https://example.com/a"))
+        .unwrap();
+    // The old drop rule would have deleted this row on any of these.
+    store.set_mod_tags("fs25_a", &[]).unwrap();
+    store.set_mod_note("fs25_a", None).unwrap();
+    assert_eq!(store.all_mod_meta().unwrap().len(), 1);
+    store.set_mod_tags("fs25_a", &tags(&["t"])).unwrap();
+    store.set_mod_note("fs25_a", Some("n")).unwrap();
+    store.set_mod_tags("fs25_a", &[]).unwrap();
+    store.set_mod_note("fs25_a", None).unwrap();
+    let meta = store.mod_meta("fs25_a").unwrap();
+    assert_eq!(meta.source_url.as_deref(), Some("https://example.com/a"));
+    assert!(meta.tags.is_empty() && meta.note.is_none());
+
+    // Clearing the link with a tag still set keeps the row; clearing the tag then removes it.
+    store.set_mod_tags("fs25_a", &tags(&["t"])).unwrap();
+    store.set_mod_source_url("fs25_a", None).unwrap();
+    assert_eq!(store.mod_meta("fs25_a").unwrap().tags, tags(&["t"]));
+    store.set_mod_tags("fs25_a", &[]).unwrap();
+    assert!(store.all_mod_meta().unwrap().is_empty());
+}
+
+#[test]
+fn a_source_link_survives_reopening() {
+    let dir = tempfile::tempdir().unwrap();
+    let library = dir.path().join("library.sqlite");
+    let cache = dir.path().join("cache.sqlite");
+    let store = Store::open(&library, &cache).unwrap();
+    store
+        .set_mod_source_url("fs25_a", Some("https://example.com/a"))
+        .unwrap();
+    store
+        .set_app_setting("updates.enabled", Some("true"))
+        .unwrap();
+    drop(store);
+    let store = Store::open(&library, &cache).unwrap();
+    assert_eq!(
+        store.mod_meta("fs25_a").unwrap().source_url.as_deref(),
+        Some("https://example.com/a")
+    );
+    assert_eq!(
+        store.app_setting("updates.enabled").unwrap().as_deref(),
+        Some("true")
+    );
+}
+
+#[test]
+fn app_settings_are_set_replaced_and_removed() {
+    let store = Store::open_in_memory().unwrap();
+    assert_eq!(store.app_setting("updates.enabled").unwrap(), None);
+    store
+        .set_app_setting("updates.enabled", Some("true"))
+        .unwrap();
+    store
+        .set_app_setting("updates.lastCheck", Some("t1"))
+        .unwrap();
+    store
+        .set_app_setting("updates.enabled", Some("false"))
+        .unwrap();
+    assert_eq!(
+        store.app_setting("updates.enabled").unwrap().as_deref(),
+        Some("false")
+    );
+    assert_eq!(
+        store.app_setting("updates.lastCheck").unwrap().as_deref(),
+        Some("t1")
+    );
+    store.set_app_setting("updates.lastCheck", None).unwrap();
+    assert_eq!(store.app_setting("updates.lastCheck").unwrap(), None);
+    store.set_app_setting("never.set", None).unwrap();
+}
+
+fn catalog_match(name: &str, by: MatchedBy) -> CatalogMatch {
+    CatalogMatch {
+        name_key: name.to_string(),
+        catalog_id: format!("id-{name}"),
+        tech_name: Some(format!("Tech_{name}")),
+        latest_version: Some("2.0.0.0".to_string()),
+        download_source: Some("github".to_string()),
+        download_url: Some("https://github.com/o/r/releases/download/v2/x.zip".to_string()),
+        modhub_url: Some("https://www.farming-simulator.com/mod.php?mod_id=1".to_string()),
+        github_url: Some("https://github.com/o/r".to_string()),
+        matched_by: by,
+        checked_at: "2026-11-19T10:00:00Z".to_string(),
+    }
+}
+
+#[test]
+fn catalog_matches_round_trip_and_each_check_replaces_the_last() {
+    let store = Store::open_in_memory().unwrap();
+    assert!(store.catalog_matches().unwrap().is_empty());
+    assert_eq!(store.catalog_match("a").unwrap(), None);
+
+    let a = catalog_match("a", MatchedBy::Name);
+    let b = CatalogMatch {
+        tech_name: None,
+        latest_version: None,
+        download_source: None,
+        download_url: None,
+        modhub_url: None,
+        github_url: None,
+        ..catalog_match("b", MatchedBy::Hash)
+    };
+    store
+        .replace_catalog_matches(&[a.clone(), b.clone()])
+        .unwrap();
+    let all = store.catalog_matches().unwrap();
+    assert_eq!(all.len(), 2);
+    assert_eq!(all["a"], a);
+    assert_eq!(all["b"], b);
+    assert_eq!(store.catalog_match("a").unwrap(), Some(a));
+
+    let c = catalog_match("c", MatchedBy::Name);
+    store
+        .replace_catalog_matches(std::slice::from_ref(&c))
+        .unwrap();
+    assert_eq!(store.catalog_matches().unwrap().len(), 1);
+    assert_eq!(store.catalog_match("a").unwrap(), None);
+    store.replace_catalog_matches(&[]).unwrap();
+    assert!(store.catalog_matches().unwrap().is_empty());
+}
+
+#[test]
+fn a_match_row_this_build_cannot_read_is_a_miss_not_an_error() {
+    let store = Store::open_in_memory().unwrap();
+    store
+        .replace_catalog_matches(&[catalog_match("a", MatchedBy::Name)])
+        .unwrap();
+    store
+        .cache
+        .lock()
+        .unwrap()
+        .execute("UPDATE catalog_matches SET matched_by = 'telepathy'", [])
+        .unwrap();
+    assert!(store.catalog_matches().unwrap().is_empty());
+    assert_eq!(store.catalog_match("a").unwrap(), None);
+}
+
+#[test]
+fn a_cached_sha256_hits_only_for_the_same_size_and_mtime() {
+    let store = Store::open_in_memory().unwrap();
+    let path = mod_path("C:\\mods", "FS25_A.zip");
+    let other = mod_path("C:\\mods", "FS25_B.zip");
+    store
+        .put_sha256(&[((path.as_path(), stamp(5, 100)), "abc123")])
+        .unwrap();
+    let get = |p: &Path, s: FileStamp| store.cached_sha256(&[(p, s)]).unwrap().remove(0);
+    assert_eq!(get(&path, stamp(5, 100)).as_deref(), Some("abc123"));
+    assert_eq!(get(&path, stamp(6, 100)), None, "another size");
+    assert_eq!(get(&path, stamp(5, 101)), None, "another mtime");
+    assert_eq!(get(&other, stamp(5, 100)), None, "another file");
+    // The key ignores case and separator style, like every path key.
+    assert_eq!(
+        get(Path::new("c:/MODS/fs25_a.zip"), stamp(5, 100)).as_deref(),
+        Some("abc123")
+    );
+    // It is a different hash from the game's, in a different table.
+    assert_eq!(
+        store
+            .cached_hashes(&[(path.as_path(), stamp(5, 100), "FS25_A")])
+            .unwrap(),
+        [None]
+    );
+    // Replaced for the same path; several in one call keep their order.
+    store
+        .put_sha256(&[
+            ((path.as_path(), stamp(7, 1)), "new"),
+            ((other.as_path(), stamp(8, 2)), "second"),
+        ])
+        .unwrap();
+    assert_eq!(get(&path, stamp(5, 100)), None);
+    assert_eq!(
+        store
+            .cached_sha256(&[
+                (other.as_path(), stamp(8, 2)),
+                (path.as_path(), stamp(7, 1))
+            ])
+            .unwrap(),
+        [Some("second".to_string()), Some("new".to_string())]
+    );
 }

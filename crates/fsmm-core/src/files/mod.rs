@@ -13,6 +13,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::SystemTime;
 
 use crate::container::ModContainer;
+use crate::net;
 
 /// Suffix of a staged copy; the full name is `.<name>.fsmm-partial`. The leading dot makes
 /// `scan::enumerate` ignore it.
@@ -318,13 +319,73 @@ pub struct DownloadCheck {
 /// the Recycle Bin there) and the staged file takes its name. Any failure or cancel removes the
 /// staged file and leaves the installed mod alone. `FileOpError::Verify` names the failed check.
 pub fn install_download(
-    _dst_dir: &Path,
-    _file_name: &str,
-    _fill: &mut dyn FnMut(&mut File) -> Result<(), FileOpError>,
-    _check: &DownloadCheck,
-    _before_rename: &mut dyn FnMut() -> Result<(), FileOpError>,
+    dst_dir: &Path,
+    file_name: &str,
+    fill: &mut dyn FnMut(&mut File) -> Result<(), FileOpError>,
+    check: &DownloadCheck,
+    before_rename: &mut dyn FnMut() -> Result<(), FileOpError>,
 ) -> Result<PathBuf, FileOpError> {
-    todo!("WS-A")
+    // A bare file name: it becomes both the staging name and the target.
+    if file_name.is_empty() || Path::new(file_name).file_name() != Some(OsStr::new(file_name)) {
+        return Err(FileOpError::Io(format!(
+            "{:?}",
+            io::ErrorKind::InvalidInput
+        )));
+    }
+    let target = dst_dir.join(file_name);
+    let staging = dst_dir.join(staging_name(file_name));
+    // A leftover of an earlier, interrupted download of this same mod.
+    remove_staging(&staging);
+
+    let outcome = (|| {
+        let mut file = File::create_new(&staging).map_err(|e| io_err(&e))?;
+        fill(&mut file)?;
+        // On disk before the rename makes it visible, as for a copy.
+        file.sync_all().map_err(|e| io_err(&e))?;
+        drop(file);
+        verify_download(&staging, check)?;
+        // The installed mod goes to the Recycle Bin here, only once its replacement is good.
+        before_rename()?;
+        // The last look before the rename, which would replace a file that appeared meanwhile.
+        if taken(&target) {
+            return Err(FileOpError::Exists);
+        }
+        fs::rename(&staging, &target).map_err(|e| io_err(&e))
+    })();
+    match outcome {
+        Ok(()) => Ok(target),
+        Err(e) => {
+            remove_staging(&staging);
+            Err(e)
+        }
+    }
+}
+
+/// The checks of [`DownloadCheck`], in the order SHA-256, zip, `modDesc.xml`, version, size. A
+/// failure's detail is `sha256`, `notAZip`, `noModDesc`, `version` or `size`.
+fn verify_download(path: &Path, check: &DownloadCheck) -> Result<(), FileOpError> {
+    let fail = |what: &str| FileOpError::Verify(what.to_string());
+    if let Some(want) = &check.sha256 {
+        let got = hash::sha256(path, &mut |_| {}, &AtomicBool::new(false))?;
+        if !got.eq_ignore_ascii_case(want.trim()) {
+            return Err(fail("sha256"));
+        }
+    }
+    let mut container = ModContainer::open(path).map_err(|_| fail("notAZip"))?;
+    let version = crate::scan::desc_version(&mut container).ok_or_else(|| fail("noModDesc"))?;
+    let current = net::versions_equal(&version, &check.min_version)
+        || net::is_newer(&version, &check.min_version) == Some(true);
+    if !current {
+        return Err(fail("version"));
+    }
+    if let Some(approx) = check.approx_size.filter(|&a| a > 0) {
+        let size = fs::metadata(path).map_err(|e| io_err(&e))?.len();
+        // Within 5% of what the page said.
+        if u128::from(size.abs_diff(approx)) * 100 > u128::from(approx) * 5 {
+            return Err(fail("size"));
+        }
+    }
+    Ok(())
 }
 
 /// [`copy_staged`] for a replace. `before_rename` runs once the copy has verified, just before it
