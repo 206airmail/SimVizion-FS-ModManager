@@ -8,7 +8,7 @@ import {
   RefreshCw,
   SearchX,
 } from 'lucide-react';
-import { useCallback, useDeferredValue, useEffect, useMemo, useState } from 'react';
+import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import type { GameStatus, ModEntry, Profile, ScanProgress } from '../../api';
 import { api } from '../../api/client';
 import { describeError } from '../../lib/errors';
@@ -26,6 +26,7 @@ import { SegmentedControl } from '../../ui/SegmentedControl';
 import { Select, type SelectOption } from '../../ui/Select';
 import { Tooltip } from '../../ui/Tooltip';
 import { ActionErrorBanner } from '../ActionErrorBanner';
+import type { FileOpsController } from '../files/useFileOps';
 import { switchBlockedReason } from '../switching/blocked';
 import { SetActiveButton } from '../switching/SetActiveButton';
 import { SwitchNotices } from '../switching/SwitchNotices';
@@ -66,11 +67,12 @@ export interface LibraryScreenProps {
   profiles: readonly Profile[];
   game: GameStatus | null;
   switching: SwitchingController;
+  fileOps: FileOpsController;
 }
 
 const t = strings.library;
 
-export function LibraryScreen({ profile, profiles, game, switching }: LibraryScreenProps) {
+export function LibraryScreen({ profile, profiles, game, switching, fileOps }: LibraryScreenProps) {
   const [query, setQuery] = useState<LibraryQuery>(defaultQuery);
   const [view, setView] = useState<View>('list');
   // The docked preference and the temporary drawer are separate, so a narrow window
@@ -84,8 +86,26 @@ export function LibraryScreen({ profile, profiles, game, switching }: LibraryScr
     (report: Report<ScanProgress>) => api.listMods(profile.id, report),
     [profile.id],
   );
-  const { state, progress, reload } = useAsync(load);
+  const { state, progress, reload, replace } = useAsync(load);
   const openFolder = useActionError(profile.id);
+
+  // After a copy, move or remove ends, read the list again and swap it in place (no loading
+  // state, so the rows and the scroll position stay). A failed read keeps what is on screen.
+  const seenRevision = useRef(fileOps.revision);
+  useEffect(() => {
+    if (fileOps.revision === seenRevision.current) return;
+    seenRevision.current = fileOps.revision;
+    let current = true;
+    api.listMods(profile.id).then(
+      (fresh) => {
+        if (current) replace(fresh);
+      },
+      () => undefined,
+    );
+    return () => {
+      current = false;
+    };
+  }, [fileOps.revision, profile.id, replace]);
   const allMods = state.status === 'ready' ? state.data : NO_MODS;
 
   const deferredQuery = useDeferredValue(query);
@@ -341,6 +361,7 @@ export function LibraryScreen({ profile, profiles, game, switching }: LibraryScr
           mods={selectedMods}
           profiles={profiles}
           game={game}
+          fileOps={fileOps}
           overlay={narrow}
           onClose={closeInspector}
         />
