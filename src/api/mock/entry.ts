@@ -191,14 +191,14 @@ function makeSource(ctx: GenContext, kind: ModKind, author: string, modName: str
   }
   const r = rng.next();
   if (r < 0.68) return { type: 'modHub', id: String(rng.int(100000, 349999)) };
-  if (r < 0.72) return { type: 'manual' };
+  if (r < 0.72) return { type: 'manual', host: 'www.kingmods.net' };
   return { type: 'unknown' };
 }
 
 function makeUpdate(rng: Rng, source: ModSource, version: string): UpdateState {
   if (source.type !== 'modHub' && source.type !== 'gitHub') return { type: 'unknown' };
   const r = rng.next();
-  if (r < 0.1) return { type: 'available', version: bumpVersion(version, rng) };
+  if (r < 0.1) return { type: 'available', version: bumpVersion(version, rng), installable: true };
   return r < 0.97 ? { type: 'upToDate' } : { type: 'unknown' };
 }
 
@@ -248,5 +248,6 @@ export function createMod(ctx: GenContext, kind: ModKind): ModEntry {
     alsoIn: [],
     tags: [],
     note: null,
+    links: [],
   };
 }

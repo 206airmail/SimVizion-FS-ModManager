@@ -27,6 +27,13 @@
 //   set_tags           { modName, tags }                    -> string[]
 //   set_note           { modName, note }                    -> null
 //   list_tags                                               -> string[]
+//   get_update_settings                                     -> UpdateSettings
+//   set_updates_enabled { enabled }                         -> UpdateSettings
+//   check_for_updates  { force }                            -> UpdateCheck
+//   plan_update        { modName }                          -> UpdatePlan
+//   install_update     { modName, profileIds, onProgress: Channel<OpProgress> } -> OpResult
+//   open_mod_link      { modName, kind }                    -> null
+//   set_source_link    { modName, url }                     -> string | null
 //
 // A failing command rejects with an ApiError object `{ code, detail }`.
 // Thumbnails are not commands: ModEntry.icon is an http://thumb.localhost/... URL served by a
@@ -40,6 +47,7 @@ import type {
   Comparison,
   GameStatus,
   HashProgress,
+  LinkKind,
   ModEntry,
   OpProgress,
   OpResult,
@@ -50,6 +58,9 @@ import type {
   SwitchResult,
   TransferMode,
   TransferPlan,
+  UpdateCheck,
+  UpdatePlan,
+  UpdateSettings,
 } from '.';
 import { ApiFailure, isErrorCode } from '../lib/errors';
 
@@ -160,6 +171,29 @@ export function createTauriApi(): Api {
     },
     listTags() {
       return call<string[]>('list_tags');
+    },
+    getUpdateSettings() {
+      return call<UpdateSettings>('get_update_settings');
+    },
+    setUpdatesEnabled(enabled: boolean) {
+      return call<UpdateSettings>('set_updates_enabled', { enabled });
+    },
+    checkForUpdates(force: boolean) {
+      return call<UpdateCheck>('check_for_updates', { force });
+    },
+    planUpdate(modName: string) {
+      return call<UpdatePlan>('plan_update', { modName });
+    },
+    installUpdate(modName: string, profileIds: string[], onProgress?: (p: OpProgress) => void) {
+      const channel = new Channel<OpProgress>();
+      channel.onmessage = (progress) => onProgress?.(progress);
+      return call<OpResult>('install_update', { modName, profileIds, onProgress: channel });
+    },
+    async openModLink(modName: string, kind: LinkKind) {
+      await call('open_mod_link', { modName, kind });
+    },
+    setSourceLink(modName: string, url: string | null) {
+      return call<string | null>('set_source_link', { modName, url });
     },
   };
 }

@@ -32,6 +32,7 @@ fn sample_entry(name: &str) -> ModEntry {
         also_in: Vec::new(),
         tags: Vec::new(),
         note: None,
+        links: Vec::new(),
     }
 }
 

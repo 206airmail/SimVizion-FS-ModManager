@@ -300,6 +300,33 @@ fn copy_staged_with(
     stage(src, dst_dir, progress, cancel, after_copy, &mut || Ok(()))
 }
 
+/// What a downloaded update must be before it may replace the installed mod (plan M7).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DownloadCheck {
+    /// Lower-case hex SHA-256 the file must have, when the catalog knows it.
+    pub sha256: Option<String>,
+    /// The `modDesc.xml` version must be equal to or newer than this.
+    pub min_version: String,
+    /// Approximate size from a ModHub page; the file must be within 5% of it.
+    pub approx_size: Option<u64>,
+}
+
+/// Installs a downloaded update under `file_name` in `dst_dir` (plan M7 decision 5): `fill`
+/// writes the download into a hidden staged file; then the file is synced and verified
+/// (`check`: SHA-256 when given, opens as a zip with a `modDesc.xml` whose version is at least
+/// `min_version`, size near `approx_size`); then `before_rename` runs (the installed mod goes to
+/// the Recycle Bin there) and the staged file takes its name. Any failure or cancel removes the
+/// staged file and leaves the installed mod alone. `FileOpError::Verify` names the failed check.
+pub fn install_download(
+    _dst_dir: &Path,
+    _file_name: &str,
+    _fill: &mut dyn FnMut(&mut File) -> Result<(), FileOpError>,
+    _check: &DownloadCheck,
+    _before_rename: &mut dyn FnMut() -> Result<(), FileOpError>,
+) -> Result<PathBuf, FileOpError> {
+    todo!("WS-A")
+}
+
 /// [`copy_staged`] for a replace. `before_rename` runs once the copy has verified, just before it
 /// takes its name; that is where the mod being replaced goes to the Recycle Bin, so a cancelled or
 /// failed copy leaves it in place. An error from it removes the staged copy and is returned. The

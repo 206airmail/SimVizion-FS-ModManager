@@ -52,6 +52,18 @@ export const strings = {
     cannotRemoveProfile: 'The active folder and the game default folder stay in the list.',
     savegameMissing: 'That savegame could not be found. It may have been deleted in the game.',
     savegameUnreadable: 'That savegame could not be read. The game may still be saving it.',
+    offline:
+      'The update service could not be reached. Check your internet connection and try again.',
+    rateLimited:
+      'The update service asked the app to wait a little. It will be asked again later; nothing was changed.',
+    updatesDisabled:
+      'Online update checks are switched off. Turn them on in Settings to check for updates.',
+    verifyFailed:
+      'The downloaded file was not what the update promised, so it was discarded. The installed mod was not changed.',
+    notInstallable:
+      'This update cannot be installed by the app. Open its page to download it yourself.',
+    invalidLink:
+      'That is not a web address the app can use. Paste a link that starts with https:// or http://.',
   } satisfies Record<ErrorCode, string>,
 
   actionFailed: {

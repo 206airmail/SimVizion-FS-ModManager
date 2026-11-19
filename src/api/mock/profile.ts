@@ -284,7 +284,7 @@ function forceUpdates(mods: ModEntry[], count: number, rng: Rng, locked: Set<Mod
     if (mod.source.type !== 'modHub' && mod.source.type !== 'gitHub') {
       mod.source = { type: 'modHub', id: String(rng.int(100000, 349999)) };
     }
-    mod.update = { type: 'available', version: bumpVersion(mod.version, rng) };
+    mod.update = { type: 'available', version: bumpVersion(mod.version, rng), installable: true };
   }
 }
 
@@ -349,7 +349,7 @@ export function pickCopies(
     copy.alsoIn = [];
     if (olderOnes.includes(original)) {
       copy.version = olderVersion(original.version);
-      copy.update = { type: 'available', version: original.version };
+      copy.update = { type: 'available', version: original.version, installable: true };
       copy.modified = toIso(
         Math.max(
           Date.parse(original.modified) - rng.int(15, 90) * 86_400_000,
