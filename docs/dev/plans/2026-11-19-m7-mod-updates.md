@@ -205,3 +205,15 @@ M7 makes these real. Updates are detected through SiloAPI, and updates are insta
 - Installing dependencies automatically.
 - The app's own self-update (M8).
 - "Verified" provenance badges.
+
+## Status
+
+2026-11-19: all stages are done, and the milestone is waiting for review as a pull request.
+
+- **Stage 0:** done. Contract, skeletons, commands, `ureq` and `sha2`, and the ModHub page fixture.
+- **Stage 1:** done. WS-A (core) and WS-C (frontend) were merged.
+- **Stage 2:** done. Three changes came out of integration and the real-app check:
+  - **"Update N":** a refusal about one mod (for example `notInstallable`) now fails only that mod. Before, it failed every mod still waiting.
+  - **ModHub downloads** send the mod page as `Referer`. Without it, GIANTS' CDN answers 403.
+  - **The Update dialog** ticks only the folder on screen, as this plan says. It had ticked every folder with an older copy.
+- **Real-app check:** passed. The results are in `docs/dev/STATUS.md`.
