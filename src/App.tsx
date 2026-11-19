@@ -1,5 +1,6 @@
 import { Construction, FolderX } from 'lucide-react';
 import { useCallback, useState } from 'react';
+import type { Profile } from './api';
 import { api } from './api/client';
 import { ActionErrorBanner } from './features/ActionErrorBanner';
 import { Gallery } from './features/gallery/Gallery';
@@ -8,6 +9,9 @@ import { AppHeader } from './features/shell/AppHeader';
 import { ProfileRail, type Section } from './features/shell/ProfileRail';
 import { StatusBar } from './features/shell/StatusBar';
 import { useGameStatus } from './features/shell/useGameStatus';
+import { SettingsRestoreBanner } from './features/switching/SettingsRestoreBanner';
+import { useSettingsRestore } from './features/switching/useSettingsRestore';
+import { useSwitching } from './features/switching/useSwitching';
 import { describeError } from './lib/errors';
 import { useActionError } from './lib/useActionError';
 import { useAsync } from './lib/useAsync';
@@ -28,16 +32,32 @@ function Workspace() {
   // Profiles and the game status load separately: the status refreshes on its own schedule and
   // must never reset the profile list or the selection.
   const { state, reload, replace } = useAsync(loadProfiles);
-  const game = useGameStatus();
+  const { game, refresh: refreshGame } = useGameStatus();
   const addFolder = useActionError();
   const runAddFolder = addFolder.run;
   const [section, setSection] = useState<Section>('library');
   const [chosenProfileId, setChosenProfileId] = useState<string | null>(null);
 
-  const selectProfile = useCallback((id: string) => {
-    setChosenProfileId(id);
-    setSection('library');
-  }, []);
+  // After a write to gameSettings.xml: fresh profiles (the ACTIVE marks) and game status. Neither
+  // read may fail the write that already succeeded, so this never rejects.
+  const reloadAfterWrite = useCallback(async (): Promise<Profile[] | null> => {
+    const [fresh] = await Promise.all([api.listProfiles().catch(() => null), refreshGame()]);
+    if (fresh) replace(fresh);
+    return fresh;
+  }, [replace, refreshGame]);
+  const switching = useSwitching(reloadAfterWrite);
+  const clearSwitching = switching.clear;
+  const settingsRestore = useSettingsRestore(game, reloadAfterWrite);
+
+  const selectProfile = useCallback(
+    (id: string) => {
+      // A switch banner belongs to the profile it happened in; leaving that profile dismisses it.
+      clearSwitching();
+      setChosenProfileId(id);
+      setSection('library');
+    },
+    [clearSwitching],
+  );
 
   const addProfile = useCallback(
     () =>
@@ -75,6 +95,7 @@ function Workspace() {
         />
 
         <div className="mm-content">
+          <SettingsRestoreBanner restore={settingsRestore} />
           {addFolder.message !== null && (
             <ActionErrorBanner
               title={strings.actionFailed.addFolder}
@@ -107,7 +128,12 @@ function Workspace() {
             </main>
           ) : profile ? (
             <main className="mm-main">
-              <LibraryScreen profile={profile} profiles={profiles} game={game} />
+              <LibraryScreen
+                profile={profile}
+                profiles={profiles}
+                game={game}
+                switching={switching}
+              />
             </main>
           ) : (
             <main className="sv-panel" aria-busy="true" />
