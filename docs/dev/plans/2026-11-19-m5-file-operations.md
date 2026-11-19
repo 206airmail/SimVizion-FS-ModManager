@@ -110,7 +110,7 @@ Facts:
 
 | Workstream | Owns | Acceptance (tests in temp dirs, fake recycler and free space) |
 |---|---|---|
-| **WS-A core** | `crates/fsmm-core/src/files/**`, `library/**`, `store/**` | <ul><li>**Staged copy:** zips and folders keep their mtime; cancel mid-file leaves no staged copy or target; verification failure is cleaned up; the staged name is invisible to `scan::enumerate`.</li><li>**Move:** same volume (rename) and the cross-volume fallback, simulated by a hook.</li><li>**Plans and clashes:** clash detection is case-insensitive; execution honours the choices; a changed source or target gives `targetChanged`; replace recycles the old mod first, and refusal leaves both mods untouched.</li><li>**Remove:** recycle success, and `recycleUnavailable` with the file kept.</li><li>**Guards and results:** guards per item; `notEnoughSpace`; `busy`; progress is monotonic; journal rows; rename and remove-profile rules; `also_in` and counts refresh after an operation.</li></ul> |
+| **WS-A core** | `crates/fsmm-core/src/files/**`, `library/**`, `store/**` | <ul><li>**Staged copy:** zips and folders keep their mtime; cancel mid-file leaves no staged copy or target; verification failure is cleaned up; the staged name is invisible to `scan::enumerate`.</li><li>**Move:** same volume (rename) and the cross-volume fallback, simulated by a hook.</li><li>**Plans and clashes:** clash detection is case-insensitive; execution honours the choices; a changed source or target gives `targetChanged`; replace recycles the old mod (after the new copy verified; see Status), and refusal leaves both mods untouched.</li><li>**Remove:** recycle success, and `recycleUnavailable` with the file kept.</li><li>**Guards and results:** guards per item; `notEnoughSpace`; `busy`; progress is monotonic; journal rows; rename and remove-profile rules; `also_in` and counts refresh after an operation.</li></ul> |
 | **WS-C frontend** | `src/ui/Dialog.tsx`, `src/ui/Menu.tsx` (+ gallery), `src/api/tauri.ts`, `client.ts`, `mock/**`, `src/features/**`, `src/lib/**`, `src/strings.ts` | <ul><li>**Primitives:** accessible, keyboard complete, styled to the design system's dialog and popup references.</li><li>**Flows:** every flow and state wired; mock scenarios.</li><li>**Tests:** unit tests for strings, plan and clash choices, and mock semantics.</li><li>**Review:** Orca browser review at 1280×720 and about 960 px of the transfer dialog with clashes, progress, results, remove confirmation and the profile menu.</li></ul> |
 
 **Stage 2 — coordinator.**
@@ -136,3 +136,14 @@ Facts:
 ## Out of scope
 
 Compare mode, savegame comparison, tags and notes (M6). Mod updates (M7). Undo for file operations. Hard-link space saving, file watching, launching the game.
+
+## Status
+
+2026-11-19: all stages are done, and the milestone is waiting for review as a pull request.
+
+- **Stage 0:** done. It covered the contract, the Windows recycler spike, the skeletons and the Tauri commands.
+- **Stage 1:** WS-A (core) and WS-C (frontend) are done and merged.
+- **Stage 2:** integration is done, with two changes from this plan:
+  - A Replace recycles the old mod only once the new copy has verified (see `docs/dev/decisions.md`).
+  - Items are journaled in a `file_ops` table, not in `ops`.
+- **Real-app check:** passed; the results are in `docs/dev/STATUS.md`.

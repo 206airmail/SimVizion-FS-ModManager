@@ -97,3 +97,11 @@ Why: the user chose to split the old M5. M5 is file operations (copy, move, remo
 ## 2026-11-19: Recycling refuses rather than deletes
 
 Why: the project rule is that nothing is deleted outright, and Microsoft does not document what `IFileOperation` does with an item it cannot recycle (reports say it deletes it). The recycler sets `FOFX_RECYCLEONDELETE` (plus `FOF_WANTNUKEWARNING`), vetoes in `PreDeleteItem` any delete Windows does not flag `TSF_DELETE_RECYCLE_IF_POSSIBLE` (the approach Electron uses), and counts an item as recycled only when its delete succeeded and a Recycle Bin item was created. Verified 2026-11-19: a file on a local disk went to the Recycle Bin; a file on `\\localhost\C$` (no Recycle Bin) was refused and stayed. Rejected: `SHFileOperation` with `FOF_ALLOWUNDO` (no veto possible); the `trash` crate (no veto, no recycled-item check).
+
+## 2026-11-19: M5 — a replaced mod goes to the Recycle Bin only after its replacement verified
+
+Why: a mod can be 3.9 GB, and a copy can be cancelled or fail. The new copy is staged and verified first; the old mod is recycled just before the staged copy takes its name, so a cancelled or failed Replace leaves the old mod where it was. The exception is a move on one volume, an instant rename, where the old mod goes first. Copied files are synced to disk (`sync_all`) before that rename, so a power cut cannot leave a mod under its real name with missing data. Rejected: recycling the old mod before copying (the original M5 plan; it could leave the folder with neither version); renaming the source to a staging name for moves (a crash between the renames could hide the only copy).
+
+## 2026-11-19: M5 — file operations have their own journal and no Undo
+
+Why: copy, move and recycle rows go into a `file_ops` table in `library.sqlite`, with one row per item and per replaced mod, and ids prefixed `f`. They do not go into the `ops` table, whose rows Undo walks for `gameSettings.xml` writes, so a file operation can never become the "latest write" that Undo looks at. There is no Undo for file operations: recycled mods are restored from the Recycle Bin, and the result banners say so. Rejected: sharing the `ops` table; journal-driven undo of copies and moves (possible later).
