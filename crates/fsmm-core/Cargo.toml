@@ -7,9 +7,35 @@ license.workspace = true
 publish = false
 
 [dependencies]
+# Decodes the BC1/BC2/BC3/BC7 blocks in DDS mod icons. Pure Rust; the DDS header is parsed here.
+bcdec_rs = "0.2.1"
+# RFC 3339 timestamps for file modification and scan times.
+humantime = "2.4.0"
+# Reads Steam's VDF files (libraryfolders.vdf, appmanifest_*.acf) to find the game install.
+keyvalues-parser = "0.2.4"
+# Decodes PNG mod icons and encodes thumbnails.
+png = "0.18.1"
+# Reads mods and decodes icons in parallel.
+rayon = "1.12.0"
+# Parses modDesc.xml and gameSettings.xml (read-only).
+roxmltree = "0.21.2"
 serde = { workspace = true }
+# Reads Epic Games launcher manifests (JSON).
+serde_json = { workspace = true }
 # Generates the TypeScript side of the data contract from the Rust types.
 ts-rs = "12"
+# Reads mod zips through the central directory. Minor version pinned: releases are frequent.
+# Only Deflate (pure-Rust zlib-rs backend) is enabled; real mods use only Deflate and Stored.
+zip = { version = "~9.7", default-features = false, features = ["deflate-flate2-zlib-rs"] }
+
+[target."cfg(windows)".dependencies]
+# Documents via SHGetKnownFolderPath, so a redirected Documents folder is honoured.
+dirs = "7.0.0"
+# Process snapshot (ToolHelp) to tell whether the game or dedicated server is running.
+windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_System_Diagnostics_ToolHelp"] }
+# Reads the Steam install path and Uninstall keys from the registry.
+winreg = "0.56.0"
 
 [dev-dependencies]
-serde_json = { workspace = true }
+# Temporary directories for generated test fixtures.
+tempfile = "3.27.0"
