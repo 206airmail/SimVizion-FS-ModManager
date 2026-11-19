@@ -29,6 +29,7 @@ pub struct AppState {
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
             // The app's own files only: user data and a disposable cache (plan M3 decision 3).
             let data_dir = app.path().app_data_dir()?;

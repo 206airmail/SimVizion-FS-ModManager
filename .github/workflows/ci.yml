@@ -1,0 +1,43 @@
+# Every check from CLAUDE.md, on Windows (the only platform the app supports).
+name: CI
+
+on:
+  push:
+    branches: [main, 'm*-*']
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: npm
+      - uses: dtolnay/rust-toolchain@39008827e6b4319a349e9a42dfc90579dd25f1ca # stable, 2026-11-15
+        with:
+          toolchain: stable
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      - run: npm ci
+      - run: cargo fmt --all --check
+      - run: cargo clippy --workspace --all-targets -- -D warnings
+      - run: cargo test --workspace
+      - name: Generated TypeScript types match model.rs
+        run: |
+          npm run gen:types
+          git diff --exit-code -- src/api/types
+      - run: npm run check
+      - run: npm run check:bundle
+      - name: Third-party notices are up to date
+        run: |
+          node scripts/third-party-notices.mjs
+          git diff --exit-code -- THIRD-PARTY-NOTICES.txt
