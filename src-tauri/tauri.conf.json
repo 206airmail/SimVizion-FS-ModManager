@@ -22,7 +22,7 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; img-src 'self' data: asset: http://asset.localhost; style-src 'self' 'unsafe-inline'",
+      "csp": "default-src 'self'; img-src 'self' data: http://thumb.localhost; style-src 'self' 'unsafe-inline'",
       "devCsp": null
     }
   },

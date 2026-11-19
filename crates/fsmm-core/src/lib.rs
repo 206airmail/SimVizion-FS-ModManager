@@ -7,8 +7,10 @@
 pub mod container;
 pub mod discovery;
 pub mod icons;
+pub mod library;
 pub mod model;
 pub mod scan;
+pub mod store;
 
 #[cfg(test)]
 pub(crate) mod testutil;

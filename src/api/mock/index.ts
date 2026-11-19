@@ -1,4 +1,5 @@
-import type { Api, GameStatus, ModEntry, Profile } from '..';
+import type { Api, GameStatus, ModEntry, Profile, ScanProgress } from '..';
+import { ApiFailure } from '../../lib/errors';
 import { GAME_DESC_VERSION } from './entry';
 import { createRng } from './prng';
 import { buildProfileMods, emptyRecipe, pickCopies, scaleRecipe, type Recipe } from './profile';
@@ -8,9 +9,12 @@ export interface MockOptions {
   stress?: boolean;
   /** Artificial latency per call in ms. Default 250. */
   delayMs?: number;
-  /** When true, listMods rejects with an Error. Default false. */
+  /** When true, listMods rejects with a folderUnreadable ApiFailure. Default false. */
   failMods?: boolean;
 }
+
+/** How many progress events a mock listMods emits across its delay. */
+const PROGRESS_STEPS = 5;
 
 const MODS_ROOT = 'C:\\Users\\Player\\Documents\\My Games\\FarmingSimulator2025';
 
@@ -152,6 +156,13 @@ export function createMockApi(options: MockOptions = {}): Api {
     delayMs > 0 ? new Promise((resolve) => setTimeout(resolve, delayMs)) : Promise.resolve();
 
   return {
+    sampleData: true,
+    async addProfile(): Promise<Profile | null> {
+      await wait();
+      return null;
+    },
+    async openProfileFolder(): Promise<void> {},
+    async showModInFolder(): Promise<void> {},
     async getGameStatus(): Promise<GameStatus> {
       await wait();
       const testing = dataset(stress).profiles.find((p) => p.id === 'testing');
@@ -169,10 +180,25 @@ export function createMockApi(options: MockOptions = {}): Api {
       await wait();
       return dataset(stress).profiles.map((p) => ({ ...p }));
     },
-    async listMods(profileId: string): Promise<ModEntry[]> {
-      await wait();
-      if (failMods) throw new Error('The mock mods folder could not be read.');
-      return dataset(stress).mods.get(profileId)?.slice() ?? [];
+    async listMods(
+      profileId: string,
+      onProgress?: (progress: ScanProgress) => void,
+    ): Promise<ModEntry[]> {
+      if (failMods) {
+        await wait();
+        throw new ApiFailure('folderUnreadable');
+      }
+      const mods = dataset(stress).mods.get(profileId)?.slice() ?? [];
+      // Spread the delay over a few steps, each reporting how much has been "read" so far.
+      for (let step = 1; step <= PROGRESS_STEPS; step++) {
+        await new Promise((resolve) => setTimeout(resolve, delayMs / PROGRESS_STEPS));
+        onProgress?.({
+          profileId,
+          done: Math.round((mods.length * step) / PROGRESS_STEPS),
+          total: mods.length,
+        });
+      }
+      return mods;
     },
   };
 }

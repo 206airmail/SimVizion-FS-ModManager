@@ -10,9 +10,12 @@ import {
   TriangleAlert,
 } from 'lucide-react';
 import type { ReactNode } from 'react';
-import type { GameStatus, ModEntry, Profile } from '../../api';
+import type { GameStatus, ModEntry, ModIssue, Profile } from '../../api';
+import { api } from '../../api/client';
 import { formatBytes, formatDate } from '../../lib/format';
+import { useActionError } from '../../lib/useActionError';
 import { strings } from '../../strings';
+import { ActionErrorBanner } from '../ActionErrorBanner';
 import { Button, IconButton } from '../../ui/Button';
 import { cx } from '../../ui/cx';
 import { Banner, EmptyState } from '../../ui/Feedback';
@@ -32,6 +35,9 @@ export interface InspectorProps {
 }
 
 const t = strings.inspector;
+
+/** The issue's data worded for display; null when there is nothing to add to the help text. */
+const detailText = (issue: ModIssue) => strings.issueDetail[issue.kind](issue.detail);
 
 export function Inspector({ mods, profiles, game, overlay, onClose }: InspectorProps) {
   const only = mods.length === 1 ? mods[0] : undefined;
@@ -69,6 +75,7 @@ function ModDetails({
   profiles: readonly Profile[];
   game: GameStatus | null;
 }) {
+  const showInFolder = useActionError(`${mod.profileId}/${mod.id}`);
   const otherProfiles = profiles.filter((profile) => mod.alsoIn.includes(profile.id));
   const sourceText = describeSource(mod.source);
 
@@ -117,8 +124,8 @@ function ModDetails({
                         {strings.issues[issue.kind]}
                       </div>
                       <div className="mm-issue__text">{strings.issueHelp[issue.kind]}</div>
-                      {issue.detail && (
-                        <div className="mm-issue__detail sv-selectable">{issue.detail}</div>
+                      {detailText(issue) && (
+                        <div className="mm-issue__detail sv-selectable">{detailText(issue)}</div>
                       )}
                     </div>
                   </li>
@@ -205,8 +212,20 @@ function ModDetails({
         </div>
       </div>
 
+      {showInFolder.message !== null && (
+        <ActionErrorBanner
+          className="mm-inspector__notice"
+          title={strings.actionFailed.showInFolder}
+          message={showInFolder.message}
+          onDismiss={showInFolder.dismiss}
+        />
+      )}
       <div className="sv-panel__footer">
-        <Button size="compact" icon={FolderOpen}>
+        <Button
+          size="compact"
+          icon={FolderOpen}
+          onClick={() => void showInFolder.run(() => api.showModInFolder(mod.profileId, mod.id))}
+        >
           {t.showInFolder}
         </Button>
         <Button size="compact" icon={Copy}>

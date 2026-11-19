@@ -111,7 +111,7 @@ function conflictClone(original: ModEntry, ctx: GenContext): ModEntry {
   copy.source = { type: 'unknown' };
   copy.update = { type: 'unknown' };
   copy.dependencies = [];
-  copy.issues = [issue('conflictCopy', 'warning', `Copy of ${original.fileName}`)];
+  copy.issues = [issue('conflictCopy', 'warning', original.modName)];
   return copy;
 }
 
@@ -124,13 +124,16 @@ function folderTwin(original: ModEntry, rng: Rng): ModEntry {
   copy.modified = toIso(
     Math.min(Date.parse(original.modified) + rng.int(1, 40) * 86_400_000, MAX_MODIFIED),
   );
-  const detail = `A zip and a folder are both named ${original.modName}`;
-  copy.issues = [issue('zipAndFolderTwin', 'warning', detail)];
-  original.issues = [issue('zipAndFolderTwin', 'warning', detail)];
+  // Each entry's detail is the file name of the other one.
+  copy.issues = [issue('zipAndFolderTwin', 'warning', original.fileName)];
+  original.issues = [issue('zipAndFolderTwin', 'warning', copy.fileName)];
   return copy;
 }
 
-function toNotAMod(mod: ModEntry, ctx: GenContext) {
+/** The reason codes the core gives a notAMod issue, handed out in turn. */
+const NOT_A_MOD_CODES = ['noModDesc', 'unreadableArchive', 'invalidModDesc'] as const;
+
+function toNotAMod(mod: ModEntry, ctx: GenContext, variant: number) {
   const { rng } = ctx;
   let stem = `${rng.pick(junkStems)}_${rng.int(1, 99)}`;
   while (ctx.usedNames.has(stem.toLowerCase())) stem = `${rng.pick(junkStems)}_${rng.int(1, 99)}`;
@@ -147,21 +150,21 @@ function toNotAMod(mod: ModEntry, ctx: GenContext) {
     multiplayer: false,
     source: { type: 'unknown' },
     update: { type: 'unknown' },
-    issues: [issue('notAMod', 'error', 'No modDesc.xml found in the archive')],
+    issues: [issue('notAMod', 'error', NOT_A_MOD_CODES[variant % NOT_A_MOD_CODES.length] ?? null)],
   } satisfies Partial<ModEntry>);
 }
 
 function toInvalidName(mod: ModEntry, ctx: GenContext, variant: number) {
-  const choices: [string, string][] = [
-    [mod.modName.replace('_', ' '), 'Contains a space'],
-    [`${ctx.rng.int(2, 9)}${mod.modName}`, 'Starts with a digit'],
-    [`${mod.modName} (2)`, 'Contains a space and parentheses'],
-    [`${mod.modName.replace('_', '-')}-v2`, 'Contains a hyphen'],
+  const choices = [
+    mod.modName.replace('_', ' '),
+    `${ctx.rng.int(2, 9)}${mod.modName}`,
+    `${mod.modName} (2)`,
+    `${mod.modName.replace('_', '-')}-v2`,
   ];
-  const choice = choices[variant % choices.length];
-  if (!choice) return;
-  rename(mod, choice[0], ctx);
-  mod.issues.push(issue('invalidFileName', 'error', choice[1]));
+  const name = choices[variant % choices.length];
+  if (!name) return;
+  rename(mod, name, ctx);
+  mod.issues.push(issue('invalidFileName', 'error', null));
 }
 
 /** Applies the recipe's special entries. Everything touched ends up in `locked`. */
@@ -181,7 +184,7 @@ function applySpecials(mods: ModEntry[], recipe: Recipe, ctx: GenContext, locked
 
   for (let i = 0; i < recipe.notAMod; i++) {
     const mod = take((m) => m.kind === 'other') ?? take(notMap);
-    if (mod) toNotAMod(mod, ctx);
+    if (mod) toNotAMod(mod, ctx, i);
   }
 
   // A zip and a folder with one name, and sync-conflict copies, both replace a same-kind mod
@@ -205,22 +208,15 @@ function applySpecials(mods: ModEntry[], recipe: Recipe, ctx: GenContext, locked
   }
   for (let i = 0; i < recipe.nestedArchive; i++) {
     const mod = take(notMapOrOther);
-    if (mod)
-      mod.issues.push(
-        issue('nestedArchive', 'warning', `Contains ${mod.fileName} inside the archive`),
-      );
+    // The detail is the path of the inner archive.
+    if (mod) mod.issues.push(issue('nestedArchive', 'warning', `Mods/${mod.modName}_Inner.zip`));
   }
   for (let i = 0; i < recipe.mismatches; i++) {
     const mod = take(notMap);
     if (!mod) continue;
-    mod.descVersion = rng.int(90, 95);
-    mod.issues.push(
-      issue(
-        'descVersionMismatch',
-        'info',
-        `descVersion ${mod.descVersion}, game reported ${GAME_DESC_VERSION}`,
-      ),
-    );
+    // Only a descVersion newer than the game's is flagged; the detail is the game's value.
+    mod.descVersion = GAME_DESC_VERSION + rng.int(1, 8);
+    mod.issues.push(issue('descVersionMismatch', 'warning', String(GAME_DESC_VERSION)));
   }
   for (let i = 0; i < recipe.folders; i++) {
     const mod = take(notMapOrOther);
@@ -265,13 +261,7 @@ function addDependencies(mods: ModEntry[], recipe: Recipe, rng: Rng, locked: Set
     const missing = missingNames(i % 3 === 2 ? 2 : 1);
     const present = targets(mod, mod.kind === 'map' ? rng.int(3, 7) : rng.int(1, 2));
     mod.dependencies = [...present, ...missing.map((modName) => ({ modName, satisfied: false }))];
-    mod.issues.push(
-      issue(
-        'missingDependency',
-        'warning',
-        `Requires ${missing.join(', ')}, which is not in this profile`,
-      ),
-    );
+    mod.issues.push(issue('missingDependency', 'warning', missing.join(', ')));
   }
 
   for (const mod of mods) {

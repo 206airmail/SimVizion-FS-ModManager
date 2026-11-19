@@ -11,19 +11,20 @@ use std::fs::{self, File};
 use std::io::{self, BufReader, Read};
 use std::path::{Path, PathBuf};
 
+use serde::{Deserialize, Serialize};
 use zip::ZipArchive;
 
 use crate::model::ModFormat;
 
 /// Where a mod's icon lives inside its container. Resolved by `scan`, decoded by `icons`.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct IconLocation {
     /// Entry name as stored in the container (see [`ModContainer::find`]).
     pub rel: String,
     pub kind: IconKind,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum IconKind {
     Dds,
     Png,

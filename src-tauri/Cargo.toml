@@ -10,4 +10,13 @@ publish = false
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
+# All reading of Farming Simulator files; this crate is only the command layer.
+fsmm-core = { path = "../crates/fsmm-core" }
+# Command arguments, results and errors.
+serde = { workspace = true, features = ["derive"] }
+serde_json.workspace = true
 tauri = { version = "2", features = [] }
+# Folder picker for "Add mod folder" (called from Rust only).
+tauri-plugin-dialog = "2.8.4"
+# Opens a profile folder or reveals a mod in Explorer (called from Rust only).
+tauri-plugin-opener = "2.7.3"
