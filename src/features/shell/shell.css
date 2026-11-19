@@ -391,6 +391,19 @@
   flex: 1;
 }
 
+/* The workspace column beside the rail: an optional notice above the screen. */
+.mm-content {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sv-gap-panel);
+  min-width: 0;
+  min-height: 0;
+}
+.mm-content > main {
+  flex: 1 1 0;
+  min-height: 0;
+}
+
 .mm-main {
   display: grid;
   min-width: 0;

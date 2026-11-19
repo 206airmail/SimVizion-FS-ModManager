@@ -7,10 +7,12 @@ import { Tooltip } from '../../ui/Tooltip';
 
 export interface StatusBarProps {
   game: GameStatus | null;
+  /** True when the data on screen is generated sample data, not the user's folders. */
+  sampleData: boolean;
 }
 
 /** Quiet operational state: what the app knows about the game right now. */
-export function StatusBar({ game }: StatusBarProps) {
+export function StatusBar({ game, sampleData }: StatusBarProps) {
   const t = strings.status;
   return (
     <footer className="mm-statusbar">
@@ -44,9 +46,11 @@ export function StatusBar({ game }: StatusBarProps) {
         </>
       )}
       <span className="mm-statusbar__spacer" />
-      <Tooltip label={strings.app.sampleDataHint}>
-        <Pill size="compact">{strings.app.sampleData}</Pill>
-      </Tooltip>
+      {sampleData && (
+        <Tooltip label={strings.app.sampleDataHint}>
+          <Pill size="compact">{strings.app.sampleData}</Pill>
+        </Tooltip>
+      )}
       <span className="mm-statusbar__version">{strings.app.version}</span>
     </footer>
   );
