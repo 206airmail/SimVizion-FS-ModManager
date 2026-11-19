@@ -99,7 +99,7 @@ export function StatusBar({ game, sampleData, updateStatus, onOpenSettings }: St
           <Pill size="compact">{strings.app.sampleData}</Pill>
         </Tooltip>
       )}
-      <span className="mm-statusbar__version">{strings.app.version}</span>
+      <span className="mm-statusbar__version">{strings.app.version(__APP_VERSION__)}</span>
     </footer>
   );
 }

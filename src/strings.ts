@@ -26,7 +26,7 @@ export const strings = {
     name: 'SimVizion',
     product: 'Mod Manager',
     subtitle: 'Farming Simulator 25',
-    version: 'Version 0.1.0',
+    version: (version: string) => `Version ${version}`,
     sampleData: 'Sample data',
     sampleDataHint: 'This view shows generated sample mods, not your real folders.',
   },

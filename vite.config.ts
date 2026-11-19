@@ -13,7 +13,10 @@ export default defineConfig(({ command, mode }) => {
   return {
     plugins: [react()],
     clearScreen: false,
-    define: { __SAMPLE_BUILD__: JSON.stringify(!desktopRelease) },
+    define: {
+      __SAMPLE_BUILD__: JSON.stringify(!desktopRelease),
+      __APP_VERSION__: JSON.stringify(process.env.npm_package_version ?? 'dev'),
+    },
     server: {
       port: 1420,
       strictPort: true,
