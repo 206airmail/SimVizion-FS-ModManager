@@ -1,0 +1,99 @@
+/*
+ * SimVizion Unified UI v1.4 design tokens.
+ * Vendored from the simvizion-ui skill (examples/tokens.css, reconciled with references/colors.md).
+ * This is the only file that defines colours. Components reference these variables.
+ */
+:root {
+  /* Surfaces, boundaries, text */
+  --sv-window: #050c0e;
+  --sv-panel: #0d1b1f;
+  --sv-surface-content-raised: #101f23;
+  --sv-elevated: #14272b;
+  --sv-recessed: #071215;
+  --sv-border: #294147;
+  --sv-text: #edf4f5;
+  --sv-text-readable-secondary: #c5d4d6;
+  --sv-text-secondary: #a6b8bc;
+  --sv-text-muted: #91a6ab;
+
+  /* Functional accents and interactive states */
+  --sv-lime: #9af000;
+  --sv-primary: var(--sv-lime);
+  --sv-primary-hover: #adff24;
+  --sv-primary-pressed: #7dc900;
+  --sv-teal: #42cdd2;
+  --sv-selected-bg: #194047;
+  --sv-selected-border: #42c4cb;
+  --sv-hover-bg: #1b3237;
+  --sv-hover-border: #41858d;
+  --sv-secondary-pressed: #102328;
+  --sv-link: #86cdd0;
+  --sv-link-hover: #b2e5e6;
+
+  /* Semantic statuses and data values */
+  --sv-status-success: #a7d5a0;
+  --sv-warning: #f0b84b;
+  --sv-error: #f07171;
+  --sv-status-info: #86cdd0;
+  --sv-value-positive: #a7d5a0;
+  --sv-value-negative: #e8a0a0;
+
+  /* Destructive, disabled, switch, scrollbar */
+  --sv-destructive-bg: #24191c;
+  --sv-destructive-hover: #f48787;
+  --sv-destructive-pressed-bg: #341c22;
+  --sv-destructive-pressed: #d85b5b;
+  --sv-disabled-bg: #101a1d;
+  --sv-disabled-border: #223338;
+  --sv-disabled-text: #789096;
+  --sv-switch-on: #203518;
+  --sv-switch-on-hover: #2a451e;
+  --sv-switch-on-pressed: #14250f;
+  --sv-scroll-track: #14272b;
+  --sv-scroll-thumb: #41858d;
+  --sv-scroll-thumb-hover: #42aeb5;
+  --sv-scroll-thumb-active: #42c4cb;
+
+  /* Geometry, type, depth */
+  --sv-radius-control: 4px;
+  --sv-radius-panel: 6px;
+  --sv-radius-dialog: 8px;
+  --sv-gap-panel: 6px;
+  --sv-pad-panel: 12px;
+  --sv-scrollbar-width: 6px;
+  --sv-font: 'Segoe UI Variable', 'Segoe UI', system-ui, sans-serif;
+  --sv-font-mono: Consolas, 'Cascadia Mono', monospace;
+  --sv-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+
+  /* Optional atmospheric treatments: identity region and primary action only */
+  --sv-brand-wash: radial-gradient(ellipse at 20% 30%, rgba(0, 160, 165, 0.1), transparent 65%);
+  --sv-brand-halo: 0 0 20px rgba(0, 185, 190, 0.14);
+  --sv-primary-halo: 0 0 14px rgba(154, 240, 0, 0.16);
+
+  /*
+   * Application extensions (SimVizion Mod Manager).
+   * Derived from the canonical values above; none replaces a core token.
+   */
+  /* Tinted status containers: alpha 0x30 background, alpha 0xCC edge (colors.md section 3). */
+  --sv-tint-warning-bg: rgba(240, 184, 75, 0.19);
+  --sv-tint-warning-border: rgba(240, 184, 75, 0.8);
+  --sv-tint-error-bg: rgba(240, 113, 113, 0.19);
+  --sv-tint-error-border: rgba(240, 113, 113, 0.8);
+  --sv-tint-info-bg: rgba(134, 205, 208, 0.19);
+  --sv-tint-info-border: rgba(134, 205, 208, 0.8);
+  --sv-tint-success-bg: rgba(167, 213, 160, 0.19);
+  --sv-tint-success-border: rgba(167, 213, 160, 0.8);
+  /* Fine linework in the identity header only (identity-composition.md: domain motif). */
+  --sv-brand-linework: rgba(66, 205, 210, 0.07);
+  --sv-brand-linework-mask: linear-gradient(90deg, transparent 10%, #000 34%, transparent 62%);
+  /* Quieter edge for small status pills ("subtle semantic border", extended-components.md). */
+  --sv-tint-warning-edge: rgba(240, 184, 75, 0.45);
+  --sv-tint-error-edge: rgba(240, 113, 113, 0.45);
+  --sv-tint-info-edge: rgba(134, 205, 208, 0.45);
+  --sv-tint-success-edge: rgba(167, 213, 160, 0.45);
+  /* Skeleton placeholders (notifications.md). */
+  --sv-skeleton-a: #294147;
+  --sv-skeleton-b: #223338;
+  /* Overlay backdrop behind the constrained-width inspector drawer (layouts.md: black 30%). */
+  --sv-backdrop-drawer: rgba(0, 0, 0, 0.3);
+}

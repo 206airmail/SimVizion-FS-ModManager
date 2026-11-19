@@ -1,0 +1,53 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm run typecheck)",
+      "Bash(npm run lint)",
+      "Bash(npm run format:check)",
+      "Bash(npm run format)",
+      "Bash(npm test)",
+      "Bash(npm test *)",
+      "Bash(npm run build)",
+      "Bash(npm run gen:types)",
+      "Bash(npm run check)",
+      "Bash(cargo check *)",
+      "Bash(cargo fmt *)",
+      "Bash(cargo clippy *)",
+      "Bash(cargo test *)",
+      "Bash(cargo build *)",
+      "Bash(git status *)",
+      "Bash(git diff *)",
+      "Bash(git log *)",
+      "Bash(git branch *)",
+      "Bash(ls *)",
+      "PowerShell(npm run typecheck)",
+      "PowerShell(npm run lint)",
+      "PowerShell(npm run format:check)",
+      "PowerShell(npm run format)",
+      "PowerShell(npm test)",
+      "PowerShell(npm test *)",
+      "PowerShell(npm run build)",
+      "PowerShell(npm run gen:types)",
+      "PowerShell(npm run check)",
+      "PowerShell(cargo check *)",
+      "PowerShell(cargo fmt *)",
+      "PowerShell(cargo clippy *)",
+      "PowerShell(cargo test *)",
+      "PowerShell(cargo build *)",
+      "PowerShell(git status *)",
+      "PowerShell(git diff *)",
+      "PowerShell(git log *)",
+      "PowerShell(git branch *)",
+      "PowerShell(Get-ChildItem *)",
+      "PowerShell(Test-Path *)"
+    ],
+    "ask": [
+      "Bash(npm publish *)",
+      "Bash(cargo publish *)",
+      "Bash(gh release *)",
+      "PowerShell(npm publish *)",
+      "PowerShell(cargo publish *)",
+      "PowerShell(gh release *)"
+    ]
+  }
+}

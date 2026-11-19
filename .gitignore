@@ -1,0 +1,20 @@
+# Dependencies and build output
+node_modules/
+dist/
+target/
+src-tauri/gen/
+
+# Local tooling
+.claude/settings.local.json
+.claude/worktrees/
+CLAUDE.local.md
+*.log
+.DS_Store
+Thumbs.db
+
+# Never commit real game data
+*.zip
+gameSettings.xml
+
+# Test fixtures are the exception
+!crates/**/tests/fixtures/**

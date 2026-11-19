@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <!-- Placeholder emblem. Replace with the real SimVizion artwork, then run `npm run tauri icon src-tauri/app-icon.svg`. -->
+  <defs>
+    <linearGradient id="mark" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#9AF000"/>
+      <stop offset="1" stop-color="#42CDD2"/>
+    </linearGradient>
+  </defs>
+  <rect x="64" y="64" width="896" height="896" rx="176" fill="#0D1B1F" stroke="#294147" stroke-width="16"/>
+  <path d="M512 232 760 372v280L512 792 264 652V372Z" fill="none" stroke="url(#mark)" stroke-width="44" stroke-linejoin="round"/>
+  <path d="M388 590V434l124 96 124-96v156" fill="none" stroke="#EDF4F5" stroke-width="44" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

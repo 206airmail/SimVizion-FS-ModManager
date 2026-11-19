@@ -1,0 +1,398 @@
+/* App shell: identity header, profile rail, workspace, status bar. */
+
+.mm-app {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  gap: var(--sv-gap-panel);
+  height: 100%;
+  padding: var(--sv-gap-panel);
+}
+
+.mm-workspace {
+  display: grid;
+  grid-template-columns: 236px minmax(0, 1fr);
+  gap: var(--sv-gap-panel);
+  min-height: 0;
+}
+
+/* Keep in step with RAIL_COLLAPSE_QUERY in ProfileRail.tsx. */
+@media (max-width: 1040px) {
+  .mm-workspace {
+    grid-template-columns: 50px minmax(0, 1fr);
+  }
+}
+
+/* ---------- Header ---------- */
+.mm-header {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  min-height: 60px;
+  padding: 4px 6px 4px 10px;
+  background-image: var(--sv-brand-wash);
+}
+/* Field-row linework: a quiet nod to the domain, kept behind content and away from data. */
+.mm-header::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image: repeating-linear-gradient(
+    112deg,
+    transparent 0 21px,
+    var(--sv-brand-linework) 21px 22px
+  );
+  -webkit-mask-image: var(--sv-brand-linework-mask);
+  mask-image: var(--sv-brand-linework-mask);
+  pointer-events: none;
+}
+.mm-header > * {
+  position: relative;
+}
+
+.mm-brand {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+.mm-brand__emblem {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border: 1px solid var(--sv-border);
+  border-radius: 8px;
+  background: var(--sv-panel);
+  box-shadow: var(--sv-brand-halo);
+}
+.mm-brand__text {
+  min-width: 0;
+}
+.mm-brand__wordmark {
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+.mm-brand__name {
+  background: linear-gradient(90deg, var(--sv-lime), var(--sv-teal));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.mm-brand__subtitle {
+  color: var(--sv-text-secondary);
+  font-size: 12px;
+}
+
+.mm-context {
+  display: flex;
+  flex: none;
+  margin: 0;
+  border: 1px solid var(--sv-border);
+  border-radius: var(--sv-radius-panel);
+  background: var(--sv-panel);
+}
+.mm-context__cell {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 132px;
+  max-width: 240px;
+  padding: 7px 14px;
+}
+.mm-context__cell + .mm-context__cell {
+  border-left: 1px solid var(--sv-border);
+}
+.mm-context__value {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  font-weight: 600;
+  white-space: nowrap;
+}
+/* The one place informational teal is used: which profile the game is pointed at. */
+.mm-context__value--profile {
+  display: block;
+  color: var(--sv-link);
+}
+.mm-context__quiet {
+  color: var(--sv-text-muted);
+  font-weight: 400;
+}
+@media (max-width: 1040px) {
+  .mm-context__cell--game {
+    display: none;
+  }
+}
+
+/* ---------- Profile rail ---------- */
+.mm-rail__scroll {
+  flex: 1;
+  min-height: 0;
+  padding: 0 6px 6px;
+  overflow: auto;
+}
+.mm-rail__list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.mm-rail__group {
+  margin: 12px 0 6px 6px;
+  color: var(--sv-text-muted);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.mm-profile,
+.sv-nav-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  border: 1px solid transparent;
+  border-radius: var(--sv-radius-control);
+  background: transparent;
+  color: var(--sv-text);
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background-color 100ms ease-out,
+    border-color 100ms ease-out;
+}
+.mm-profile {
+  min-height: 50px;
+  padding: 6px 8px;
+}
+.sv-nav-item {
+  height: 32px;
+  padding: 0 8px;
+}
+.mm-profile svg,
+.sv-nav-item > svg {
+  flex: none;
+  color: var(--sv-text-secondary);
+}
+.mm-profile:hover,
+.sv-nav-item:hover {
+  background: var(--sv-hover-bg);
+}
+.mm-profile:hover .mm-profile__icon svg,
+.sv-nav-item:hover > svg {
+  color: var(--sv-text);
+}
+.mm-profile:focus-visible,
+.sv-nav-item:focus-visible {
+  outline: none;
+  border-color: var(--sv-teal);
+}
+/* Selected navigation keeps its full outline; hover must not erase it. */
+.mm-profile[aria-current='page'],
+.sv-nav-item[aria-current='page'] {
+  border-color: var(--sv-selected-border);
+  background: var(--sv-selected-bg);
+}
+.mm-profile[aria-current='page'] .mm-profile__icon svg,
+.sv-nav-item[aria-current='page'] > svg {
+  color: var(--sv-teal);
+}
+.sv-nav-item__label {
+  flex: 1;
+}
+
+.mm-profile__icon {
+  position: relative;
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 16px;
+}
+/* In the collapsed rail the dot is the only sign of the active profile. */
+.mm-profile__dot {
+  position: absolute;
+  top: -3px;
+  right: -4px;
+  display: none;
+  box-shadow: 0 0 0 2px var(--sv-panel);
+}
+.mm-profile__body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+.mm-profile__line {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+.mm-profile__name {
+  font-weight: 500;
+}
+.mm-profile__meta {
+  color: var(--sv-text-muted);
+  font-size: 12px;
+}
+/* Marks the folder the game is pointed at: an on-state, so the dot is lime. */
+.mm-active-mark {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 5px;
+  color: var(--sv-text-readable-secondary);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.mm-active-mark::before {
+  content: '';
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--sv-lime);
+}
+.mm-profile__marks {
+  display: flex;
+  flex: none;
+  gap: 8px;
+}
+.mm-profile__mark {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  color: var(--sv-text-secondary);
+  font-size: 12px;
+}
+
+.mm-rail__totals {
+  flex: none;
+  margin: 0 6px;
+  padding: 8px 10px;
+  border: 1px solid var(--sv-border);
+  border-radius: var(--sv-radius-control);
+  background: var(--sv-recessed);
+}
+.mm-rail__totals dl {
+  margin: 4px 0 0;
+}
+.mm-rail__total {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 3px 0;
+  color: var(--sv-text-secondary);
+}
+.mm-rail__total dd {
+  margin: 0;
+  color: var(--sv-text);
+  font-weight: 600;
+}
+.mm-rail__footer {
+  flex: none;
+  padding: 6px;
+}
+
+.mm-rail--collapsed .mm-rail__header {
+  justify-content: center;
+  padding: 0;
+}
+.mm-rail--collapsed .mm-rail__header .sv-panel__eyebrow,
+.mm-rail--collapsed .mm-rail__group {
+  display: none;
+}
+.mm-rail--collapsed .mm-rail__list + .mm-rail__list {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--sv-border);
+}
+.mm-rail--collapsed .mm-profile,
+.mm-rail--collapsed .sv-nav-item {
+  justify-content: center;
+  height: 36px;
+  min-height: 0;
+  padding: 0;
+}
+.mm-rail--collapsed .mm-profile__dot {
+  display: block;
+}
+.mm-rail--collapsed .sv-tooltip-anchor {
+  display: flex;
+}
+
+/* ---------- Status bar ---------- */
+.mm-statusbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  height: 28px;
+  padding: 0 12px;
+  border: 1px solid var(--sv-border);
+  border-radius: var(--sv-radius-panel);
+  background: var(--sv-elevated);
+  color: var(--sv-text-readable-secondary);
+  font-size: 12px;
+  white-space: nowrap;
+}
+.mm-statusbar__item {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.mm-statusbar__item.sv-truncate {
+  flex: 0 1 auto;
+}
+.mm-statusbar__divider {
+  flex: none;
+  width: 1px;
+  height: 14px;
+  background: var(--sv-border);
+}
+.mm-statusbar__path {
+  display: block;
+  color: var(--sv-text-muted);
+  font-family: var(--sv-font-mono);
+}
+.mm-statusbar__spacer {
+  flex: 1;
+}
+.mm-statusbar__version {
+  flex: none;
+  color: var(--sv-text-muted);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+@media (max-width: 1040px) {
+  .mm-statusbar__optional {
+    display: none;
+  }
+}
+
+/* ---------- Placeholder for sections that are not built yet ---------- */
+.mm-placeholder {
+  flex: 1;
+}
+
+.mm-main {
+  display: grid;
+  min-width: 0;
+  min-height: 0;
+}

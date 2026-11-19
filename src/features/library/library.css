@@ -1,0 +1,508 @@
+/* Library screen: centre panel (header, toolbar, list or grid) and the inspector. */
+
+.mm-library-layout {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--sv-gap-panel);
+  min-width: 0;
+  min-height: 0;
+}
+.mm-library-layout.has-inspector {
+  grid-template-columns: minmax(0, 1fr) 356px;
+}
+
+/* ---------- Panel header and toolbar ---------- */
+.mm-library__head {
+  flex: none;
+  border-bottom: 1px solid var(--sv-border);
+}
+.mm-library__title-row,
+.mm-library__toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 0 12px;
+}
+.mm-library__title-row {
+  min-height: 48px;
+}
+.mm-library__toolbar {
+  flex-wrap: wrap;
+  gap: 6px;
+  padding-bottom: 10px;
+}
+.mm-library__filters,
+.mm-library__views {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.mm-library__filters {
+  flex: 1 1 auto;
+}
+.mm-library__views {
+  flex: none;
+  margin-left: auto;
+}
+.mm-library__title {
+  flex: 0 1 auto;
+  font-size: 16px;
+  font-weight: 600;
+}
+.mm-library__path {
+  display: block;
+  color: var(--sv-text-muted);
+  font: 400 12px/1.3 var(--sv-font-mono);
+}
+.mm-library__title-row > .sv-tooltip-anchor {
+  flex: 0 10 auto;
+}
+.mm-library__gap {
+  flex: 1;
+  min-width: 0;
+}
+.mm-library__search {
+  flex: 1 1 200px;
+  min-width: 180px;
+  max-width: 340px;
+}
+.mm-library__kind {
+  width: 172px;
+}
+.mm-library__count {
+  flex: none;
+  padding: 0 4px;
+  color: var(--sv-text-secondary);
+  font-size: 12px;
+  white-space: nowrap;
+}
+.mm-library__count strong {
+  color: var(--sv-text);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+/* ---------- Shared by list and grid ---------- */
+.mm-collection {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  outline: none;
+}
+/* Keyboard focus: the cursor row or card carries the ring; the list itself only when it has none. */
+.mm-collection:focus-visible:not(:has(.is-cursor)) {
+  box-shadow: inset 0 0 0 1px var(--sv-teal);
+}
+
+.mm-modicon {
+  display: grid;
+  flex: none;
+  grid-template: minmax(0, 1fr) / minmax(0, 1fr);
+  place-items: center;
+  overflow: hidden;
+  background: var(--sv-recessed);
+  color: var(--sv-text-muted);
+}
+.mm-modicon img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+.mm-modicon--row {
+  width: 24px;
+  height: 24px;
+  border-radius: 3px;
+}
+.mm-modicon--card {
+  position: absolute;
+  inset: 0;
+}
+.mm-modicon--detail {
+  width: 84px;
+  height: 84px;
+  border: 1px solid var(--sv-border);
+  border-radius: var(--sv-radius-panel);
+}
+
+.mm-marks {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.mm-mark {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  color: var(--sv-text-readable-secondary);
+  font-size: 12px;
+}
+
+/* ---------- List view ---------- */
+.mm-modtable {
+  container-type: inline-size;
+}
+.mm-modtable__head {
+  position: sticky;
+  z-index: 2;
+  top: 0;
+}
+.mm-modtable__body {
+  position: relative;
+}
+.mm-modtable__cols {
+  grid-template-columns: minmax(220px, 2.4fr) minmax(140px, 1fr) 92px 96px 84px 112px 116px;
+}
+.mm-modrow {
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 0;
+}
+.mm-modtable:focus-visible .mm-modrow.is-cursor {
+  outline: 1px solid var(--sv-teal);
+  outline-offset: -1px;
+}
+.mm-modrow__title,
+.mm-modrow__source {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.mm-modrow__source {
+  gap: 6px;
+}
+.mm-modrow__source svg {
+  flex: none;
+  color: var(--sv-text-muted);
+}
+.mm-modrow__none {
+  color: var(--sv-text-muted);
+}
+
+/* Columns leave in order of least use as the list narrows; the title always keeps its room. */
+@container (max-width: 900px) {
+  .mm-modtable__cols {
+    grid-template-columns: minmax(220px, 1fr) 92px 96px 84px 112px 116px;
+  }
+  .mm-col--author {
+    display: none;
+  }
+}
+@container (max-width: 750px) {
+  .mm-modtable__cols {
+    grid-template-columns: minmax(220px, 1fr) 92px 96px 84px 116px;
+  }
+  .mm-col--source {
+    display: none;
+  }
+}
+@container (max-width: 640px) {
+  .mm-modtable__cols {
+    grid-template-columns: minmax(200px, 1fr) 92px 84px 116px;
+  }
+  .mm-col--kind {
+    display: none;
+  }
+}
+
+/* ---------- Grid view ---------- */
+.mm-modgrid__body {
+  position: relative;
+}
+.mm-modgrid__row {
+  position: absolute;
+  top: 0;
+  right: 8px;
+  left: 8px;
+  display: grid;
+  gap: 8px;
+}
+.mm-card {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  height: 204px;
+  overflow: hidden;
+  border: 1px solid var(--sv-border);
+  border-radius: var(--sv-radius-panel);
+  background: var(--sv-surface-content-raised);
+  transition:
+    background-color 100ms ease-out,
+    border-color 100ms ease-out;
+}
+.mm-card:hover {
+  border-color: var(--sv-hover-border);
+  background: var(--sv-hover-bg);
+}
+.mm-card[aria-selected='true'] {
+  border-color: var(--sv-selected-border);
+  background: var(--sv-selected-bg);
+}
+.mm-modgrid:focus-visible .mm-card.is-cursor {
+  outline: 1px solid var(--sv-teal);
+  outline-offset: 1px;
+}
+.mm-card__stage {
+  position: relative;
+  flex: none;
+  height: 122px;
+  border-bottom: 1px solid var(--sv-border);
+  background: var(--sv-recessed);
+}
+.mm-card__marks {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  display: flex;
+}
+/* Marks sit on artwork, so they get their own surface to stay legible. */
+.mm-card__marks .mm-marks {
+  padding: 2px 4px;
+  border-radius: var(--sv-radius-control);
+  background: var(--sv-panel);
+}
+.mm-card__marks .mm-marks:has(.sv-pill:only-child) {
+  padding: 0;
+  background: none;
+}
+.mm-card__marks .sv-pill--info {
+  background: var(--sv-elevated);
+}
+.mm-card__body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+  min-height: 0;
+  padding: 8px 10px;
+}
+.mm-card__title {
+  font-weight: 600;
+}
+.mm-card__meta {
+  color: var(--sv-text-secondary);
+  font-size: 12px;
+}
+.mm-card__foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: auto;
+}
+.mm-card__numbers {
+  color: var(--sv-text-muted);
+  font-size: 12px;
+}
+
+/* ---------- Loading ---------- */
+.mm-loading {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+.mm-loading__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 36px;
+  padding: 0 12px;
+  border-bottom: 1px solid var(--sv-border);
+}
+.mm-loading__icon {
+  flex: none;
+  width: 24px;
+  height: 24px;
+}
+
+/* ---------- Inspector ---------- */
+.mm-inspector__scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden auto;
+}
+/* Identity region: one soft wash behind the artwork and title, flat data below. */
+.mm-inspector__identity {
+  display: flex;
+  gap: 12px;
+  padding: 12px;
+  border-top: 1px solid var(--sv-border);
+  border-bottom: 1px solid var(--sv-border);
+  background-color: var(--sv-surface-content-raised);
+  background-image: var(--sv-brand-wash);
+}
+.mm-inspector__heading {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+.mm-inspector__title {
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+.mm-inspector__author {
+  color: var(--sv-text-secondary);
+}
+.mm-inspector__tags {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: auto;
+  padding-top: 6px;
+}
+.mm-inspector__version {
+  color: var(--sv-text-readable-secondary);
+  font-weight: 600;
+}
+.mm-inspector__sections {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 12px;
+}
+.mm-inspector__section-title {
+  margin: 0 0 6px;
+  font-size: 14px;
+  font-weight: 600;
+}
+.mm-inspector__description {
+  color: var(--sv-text-readable-secondary);
+  overflow-wrap: anywhere;
+}
+.mm-inspector__footer-gap {
+  flex: 1;
+}
+.mm-inspector .sv-panel__footer {
+  padding: 8px;
+}
+
+.mm-issues,
+.mm-deps {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.mm-issues {
+  gap: 10px;
+}
+.mm-issue {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+.mm-issue > svg {
+  flex: none;
+  margin-top: 1px;
+}
+.mm-issue__body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.mm-issue__title {
+  font-weight: 600;
+}
+.mm-issue__text {
+  color: var(--sv-text-readable-secondary);
+  font-size: 12px;
+}
+.mm-issue__detail {
+  color: var(--sv-text-secondary);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.mm-props {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+}
+.mm-props__row {
+  display: grid;
+  grid-template-columns: 96px minmax(0, 1fr);
+  gap: 8px;
+  align-items: baseline;
+  min-height: 26px;
+  padding: 4px 0;
+}
+.mm-props__row + .mm-props__row {
+  border-top: 1px solid var(--sv-border);
+}
+.mm-props__row dt {
+  color: var(--sv-text-secondary);
+}
+.mm-props__row dd {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 8px;
+  min-width: 0;
+  margin: 0;
+}
+.mm-props__row dd > * {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.mm-props__quiet {
+  color: var(--sv-text-muted);
+}
+
+.mm-deps {
+  gap: 6px;
+}
+.mm-dep {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.mm-dep > svg {
+  flex: none;
+}
+.mm-dep__name {
+  flex: 1;
+  font: 400 12px/1.3 var(--sv-font-mono);
+}
+.mm-dep__state {
+  flex: none;
+  color: var(--sv-text-muted);
+  font-size: 12px;
+}
+
+/* ---------- Narrow windows: the inspector becomes a drawer over the list ---------- */
+.mm-drawer-backdrop {
+  position: absolute;
+  z-index: 40;
+  inset: 0;
+  border-radius: var(--sv-radius-panel);
+  background: var(--sv-backdrop-drawer);
+}
+.mm-inspector--overlay {
+  position: absolute;
+  z-index: 41;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: min(356px, 100%);
+  box-shadow: var(--sv-shadow);
+}
+
+/* Keep in step with NARROW_QUERY in LibraryScreen.tsx. */
+@media (max-width: 1400px) {
+  .mm-library__path {
+    display: none;
+  }
+}
