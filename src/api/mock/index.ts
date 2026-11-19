@@ -1,11 +1,15 @@
 import type {
   Api,
   ClashChoice,
+  Comparison,
   GameStatus,
+  HashProgress,
   ModEntry,
   OpProgress,
   OpResult,
   Profile,
+  Savegame,
+  SavegameReport,
   ScanProgress,
   SwitchResult,
   TransferMode,
@@ -13,6 +17,7 @@ import type {
 } from '..';
 import { validateProfileName } from '../../lib/profileName';
 import { ApiFailure } from '../../lib/errors';
+import { compareMods } from './compare';
 import { GAME_DESC_VERSION } from './entry';
 import {
   cloneState,
@@ -23,8 +28,10 @@ import {
   transferMod,
   type MockState,
 } from './files';
+import { allTags, normalizeNote, normalizeTags, seedMeta, withMeta } from './meta';
 import { createRng } from './prng';
 import { buildProfileMods, emptyRecipe, pickCopies, scaleRecipe, type Recipe } from './profile';
+import { buildReport, buildSaves, hashKey, pendingMods, type SaveDef } from './savegames';
 
 export interface MockOptions {
   /** Adds a fourth profile "Stress Test" with exactly 5,000 mods. Default false. */
@@ -47,6 +54,12 @@ export interface MockOptions {
   recycleFails?: boolean;
   /** Plans show too little free space on the target drive, and moves count as cross-drive. Default false. */
   lowSpace?: boolean;
+  /** Hashing a save's files takes about 5 s instead of 1.5 s, so progress and Cancel can be tried. Default false. */
+  slowHash?: boolean;
+  /** Adds a fourth save whose file cannot be read: its report fails with savegameUnreadable. Default false. */
+  brokenSave?: boolean;
+  /** The game has no saves: listSavegames returns an empty list. Default false. */
+  noSaves?: boolean;
 }
 
 /** The mock's newest settings backup, offered while `brokenSettings` is on. */
@@ -120,6 +133,20 @@ function summarise(
   };
 }
 
+/** Gives the first `count` same-version copies in `copies` a different size and a later date. */
+function rezip(copies: ModEntry[], original: readonly ModEntry[], count: number): void {
+  const byName = new Map(original.map((mod) => [nameKey(mod.modName), mod]));
+  let changed = 0;
+  for (const mod of copies) {
+    const first = byName.get(nameKey(mod.modName));
+    if (changed >= count) return;
+    if (!first || first.version !== mod.version || first.format !== 'zip') continue;
+    mod.sizeBytes = Math.round(mod.sizeBytes * 0.97);
+    mod.modified = new Date(Date.parse(mod.modified) + 9 * 24 * 3600 * 1000).toISOString();
+    changed += 1;
+  }
+}
+
 function buildDataset(stress: boolean): Dataset {
   const main = buildProfileMods({ id: 'main', seed: 0x25a001, count: 590, recipe: MAIN_RECIPE });
   const names = new Set(main.map((m) => m.modName));
@@ -145,6 +172,9 @@ function buildDataset(stress: boolean): Dataset {
     recipe: { ...emptyRecipe, mismatches: 1, forcedUpdates: 1 },
   });
   for (const mod of offline) names.add(mod.modName);
+  // Re-zipped copies: the same version as Main Farm's, but a different file (see compare.ts).
+  rezip(testing, main, 2);
+  rezip(offline, main, 1);
 
   const lists: [string, string, string, Pick<Profile, 'isActive' | 'isGameDefault'>, ModEntry[]][] =
     [
@@ -228,6 +258,9 @@ export function createMockApi(options: MockOptions = {}): Api {
     clashes: guaranteeClashes = false,
     recycleFails = false,
     lowSpace = false,
+    slowHash = false,
+    brokenSave = false,
+    noSaves = false,
   } = options;
   const wait = (): Promise<void> =>
     delayMs > 0 ? new Promise((resolve) => setTimeout(resolve, delayMs)) : Promise.resolve();
@@ -247,6 +280,28 @@ export function createMockApi(options: MockOptions = {}): Api {
   let cancelRequested = false;
   const pause = (ms: number): Promise<void> =>
     delayMs > 0 ? new Promise((resolve) => setTimeout(resolve, ms)) : Promise.resolve();
+  // Tags and notes (shared by every profile), the saves, and the hashes computed so far.
+  const meta = seedMeta(dataset(stress).mods.get('main') ?? []);
+  let saveDefs: SaveDef[] | null = null;
+  const saves = (): SaveDef[] =>
+    noSaves ? [] : (saveDefs ??= buildSaves(dataset(stress).mods, brokenSave));
+  const hashed = new Set<string>();
+  let hashing = false;
+  let hashCancelRequested = false;
+  const requireSave = (id: string): SaveDef => {
+    const save = saves().find((candidate) => candidate.savegame.id === id);
+    if (!save) throw new ApiFailure('savegameMissing');
+    if (save.unreadable) throw new ApiFailure('savegameUnreadable');
+    return save;
+  };
+  const reportOf = (save: SaveDef, profileId: string) =>
+    buildReport({
+      save,
+      profileId,
+      folders: state().mods,
+      profileOrder: state().profiles.map((p) => p.id),
+      hashed,
+    });
   const requireProfile = (id: string): Profile => {
     const found = state().profiles.find((p) => p.id === id);
     if (!found) throw new ApiFailure('profileNotFound');
@@ -515,6 +570,98 @@ export function createMockApi(options: MockOptions = {}): Api {
       state().mods.delete(profileId);
       settle(state());
     },
+    async compareProfiles(leftProfileId: string, rightProfileId: string): Promise<Comparison> {
+      await wait();
+      requireProfile(leftProfileId);
+      requireProfile(rightProfileId);
+      return compareMods(
+        leftProfileId,
+        state().mods.get(leftProfileId) ?? [],
+        rightProfileId,
+        state().mods.get(rightProfileId) ?? [],
+      );
+    },
+    async listSavegames(): Promise<Savegame[]> {
+      await wait();
+      return saves().map((save) => ({ ...save.savegame }));
+    },
+    async savegameReport(savegameId: string, profileId: string): Promise<SavegameReport> {
+      await wait();
+      const save = requireSave(savegameId);
+      requireProfile(profileId);
+      return reportOf(save, profileId);
+    },
+    /**
+     * Hashes the pending zips at about 40 ms per progress step (1.5 s in all, 5 s with slowHash),
+     * and returns the final report. Files finished before a cancel stay hashed.
+     */
+    async checkSavegameFiles(
+      savegameId: string,
+      profileId: string,
+      onProgress?: (progress: HashProgress) => void,
+    ): Promise<SavegameReport> {
+      if (hashing) throw new ApiFailure('busy');
+      hashing = true;
+      hashCancelRequested = false;
+      try {
+        await wait();
+        const save = requireSave(savegameId);
+        requireProfile(profileId);
+        const input = {
+          save,
+          profileId,
+          folders: state().mods,
+          profileOrder: state().profiles.map((p) => p.id),
+          hashed,
+        };
+        const files = pendingMods(input);
+        const totalBytes = files.reduce((sum, mod) => sum + mod.sizeBytes, 0);
+        const ticks = slowHash ? 100 : 30;
+        let doneFiles = 0;
+        let doneBytes = 0;
+        const emit = () =>
+          onProgress?.({ doneFiles, totalFiles: files.length, doneBytes, totalBytes });
+        emit();
+        for (let tick = 1; tick <= ticks && files.length > 0; tick++) {
+          await pause(TICK_MS);
+          if (hashCancelRequested) throw new ApiFailure('cancelled');
+          const target = Math.round((files.length * tick) / ticks);
+          while (doneFiles < target) {
+            const file = files[doneFiles];
+            if (file) {
+              hashed.add(hashKey(profileId, file));
+              doneBytes += file.sizeBytes;
+            }
+            doneFiles += 1;
+          }
+          emit();
+        }
+        return buildReport({ ...input, hashed });
+      } finally {
+        hashing = false;
+        hashCancelRequested = false;
+      }
+    },
+    async cancelHashing(): Promise<void> {
+      if (hashing) hashCancelRequested = true;
+    },
+    async setTags(modName: string, tags: string[]): Promise<string[]> {
+      await wait();
+      const stored = normalizeTags(tags);
+      if (stored.length > 0) meta.tags.set(nameKey(modName), stored);
+      else meta.tags.delete(nameKey(modName));
+      return [...stored];
+    },
+    async setNote(modName: string, note: string): Promise<void> {
+      await wait();
+      const stored = normalizeNote(note);
+      if (stored === null) meta.notes.delete(nameKey(modName));
+      else meta.notes.set(nameKey(modName), stored);
+    },
+    async listTags(): Promise<string[]> {
+      await wait();
+      return allTags(meta);
+    },
     async getGameStatus(): Promise<GameStatus> {
       await wait();
       // The game's default folder means the override is off; an unreadable file tells us nothing.
@@ -545,7 +692,7 @@ export function createMockApi(options: MockOptions = {}): Api {
         await wait();
         throw new ApiFailure('folderUnreadable');
       }
-      const mods = state().mods.get(profileId)?.slice() ?? [];
+      const mods = (state().mods.get(profileId) ?? []).map((mod) => withMeta(mod, meta));
       // Spread the delay over a few steps, each reporting how much has been "read" so far.
       for (let step = 1; step <= PROGRESS_STEPS; step++) {
         await new Promise((resolve) => setTimeout(resolve, delayMs / PROGRESS_STEPS));

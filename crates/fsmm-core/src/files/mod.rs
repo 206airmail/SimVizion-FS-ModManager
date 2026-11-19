@@ -23,6 +23,7 @@ const CHUNK: usize = 4 * 1024 * 1024;
 
 #[cfg(test)]
 pub(crate) mod fakes;
+pub mod hash;
 #[cfg(test)]
 mod tests;
 #[cfg(windows)]

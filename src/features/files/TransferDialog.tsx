@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import type { ClashChoice, ModEntry, Profile, TransferMode, TransferPlan } from '../../api';
+import { useEffect, useState } from 'react';
+import type { ClashChoice, Profile, TransferMode, TransferPlan } from '../../api';
 import { api } from '../../api/client';
 import { describeError } from '../../lib/errors';
 import { formatBytes } from '../../lib/format';
@@ -20,13 +20,25 @@ import {
 import { ClashTable } from './ClashTable';
 import { TargetList } from './TargetList';
 
-export interface TransferDialogProps {
-  /** The mods to send, all from the profile `fromProfileId`. */
-  mods: readonly ModEntry[];
+/**
+ * What the dialog starts from. Library actions give the mods and the profile they are in; the
+ * dialog asks for the target and the action. Compare and Savegames also give the target (and
+ * usually the action), so the dialog skips that step and goes straight to the plan.
+ */
+export interface TransferPreset {
   fromProfileId: string;
+  /** Given: the target step is skipped and the plan is made on open. */
+  toProfileId?: string;
+  /** The starting action (copy when absent); fixed when the target is given too. */
+  mode?: TransferMode;
+  /** The mods to send, all from the profile `fromProfileId`. */
+  modIds: readonly string[];
+}
+
+export interface TransferDialogProps {
+  preset: TransferPreset;
   /** Every profile; the one the mods are in is left out of the choice. */
   profiles: readonly Profile[];
-  initialMode: TransferMode;
   onClose: () => void;
   /** The user confirmed the plan: carry it out. The dialog is closed by the caller. */
   onConfirm: (
@@ -44,35 +56,50 @@ const t = strings.fileOps.transfer;
  * core worked out (`planTransfer` writes nothing): items, size, free space and any clashes to
  * decide. Confirming hands over to the progress banner.
  */
-export function TransferDialog({
-  mods,
-  fromProfileId,
-  profiles,
-  initialMode,
-  onClose,
-  onConfirm,
-}: TransferDialogProps) {
+export function TransferDialog({ preset, profiles, onClose, onConfirm }: TransferDialogProps) {
+  // Read once: what the dialog acts on is fixed when it opens, whatever the caller does after.
+  const [{ fromProfileId, toProfileId, modIds, mode: startMode }] = useState(preset);
   const targets = profiles.filter((profile) => profile.id !== fromProfileId);
-  const [mode, setMode] = useState<TransferMode>(initialMode);
+  const [mode, setMode] = useState<TransferMode>(startMode ?? 'copy');
   const [targetId, setTargetId] = useState<string | null>(
-    targets.length === 1 ? (targets[0]?.id ?? null) : null,
+    toProfileId ?? (targets.length === 1 ? (targets[0]?.id ?? null) : null),
   );
   const [plan, setPlan] = useState<TransferPlan | null>(null);
   const [decisions, setDecisions] = useState<ClashDecisions>(new Map());
-  const [checking, setChecking] = useState(false);
+  // With the target given the plan is made on open, so the dialog starts out busy.
+  const [checking, setChecking] = useState(toProfileId !== undefined);
   const [error, setError] = useState<string | null>(null);
+  const [attempt, setAttempt] = useState(0);
+
+  // The preset path: plan on open, and again when "Try again" is pressed.
+  const presetMode = startMode ?? 'copy';
+  useEffect(() => {
+    if (toProfileId === undefined) return;
+    let current = true;
+    api.planTransfer(fromProfileId, [...modIds], toProfileId, presetMode).then(
+      (made) => {
+        if (!current) return;
+        setDecisions(defaultDecisions(made.clashes));
+        setPlan(made);
+        setChecking(false);
+      },
+      (failure: unknown) => {
+        if (!current) return;
+        setError(describeError(failure));
+        setChecking(false);
+      },
+    );
+    return () => {
+      current = false;
+    };
+  }, [fromProfileId, toProfileId, modIds, presetMode, attempt]);
 
   const check = async () => {
     if (targetId === null || checking) return;
     setChecking(true);
     setError(null);
     try {
-      const made = await api.planTransfer(
-        fromProfileId,
-        mods.map((mod) => mod.id),
-        targetId,
-        mode,
-      );
+      const made = await api.planTransfer(fromProfileId, [...modIds], targetId, mode);
       setDecisions(defaultDecisions(made.clashes));
       setPlan(made);
     } catch (failure) {
@@ -88,10 +115,51 @@ export function TransferDialog({
     </Button>
   );
 
+  const targetNameOf = (id: string | null) => profiles.find((p) => p.id === id)?.name ?? '';
+
+  if (plan === null && toProfileId !== undefined) {
+    return (
+      <Dialog
+        title={t.titleTo(presetMode, modIds.length, targetNameOf(toProfileId))}
+        size="medium"
+        busy={checking}
+        focusKey="planning"
+        onClose={onClose}
+        footer={
+          <>
+            {cancel}
+            {error !== null && (
+              <Button
+                variant="primary"
+                onClick={() => {
+                  setError(null);
+                  setChecking(true);
+                  setAttempt((count) => count + 1);
+                }}
+              >
+                {strings.states.retry}
+              </Button>
+            )}
+          </>
+        }
+      >
+        {error !== null ? (
+          <Banner tone="error" title={strings.actionFailed.planTransfer}>
+            {error}
+          </Banner>
+        ) : (
+          <p role="status" aria-busy="true">
+            {t.planning}
+          </p>
+        )}
+      </Dialog>
+    );
+  }
+
   if (plan === null) {
     return (
       <Dialog
-        title={t.title(mode, mods.length)}
+        title={t.title(mode, modIds.length)}
         size="medium"
         busy={checking}
         focusKey="choose"
@@ -145,27 +213,33 @@ export function TransferDialog({
     );
   }
 
-  const targetName = profiles.find((profile) => profile.id === plan.toProfileId)?.name ?? '';
+  const targetName = targetNameOf(plan.toProfileId);
   const count = transferCount(plan, decisions);
   const needsSpace = lacksSpace(plan);
   const itemsSize = plan.items.reduce((sum, item) => sum + item.sizeBytes, 0);
 
   return (
     <Dialog
-      title={t.title(plan.mode, plan.items.length)}
+      title={
+        toProfileId === undefined
+          ? t.title(plan.mode, plan.items.length)
+          : t.titleTo(plan.mode, plan.items.length, targetName)
+      }
       size="large"
       focusKey="review"
       onClose={onClose}
       footer={
         <>
-          <Button
-            onClick={() => {
-              setPlan(null);
-              setError(null);
-            }}
-          >
-            {t.back}
-          </Button>
+          {toProfileId === undefined && (
+            <Button
+              onClick={() => {
+                setPlan(null);
+                setError(null);
+              }}
+            >
+              {t.back}
+            </Button>
+          )}
           {cancel}
           <Button
             variant="primary"

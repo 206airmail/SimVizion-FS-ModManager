@@ -69,10 +69,12 @@ export function FileActions({ mods, profiles, game, fileOps }: FileActionsProps)
 
       {open?.kind === 'transfer' && profileId !== undefined && (
         <TransferDialog
-          mods={open.mods}
-          fromProfileId={profileId}
+          preset={{
+            fromProfileId: profileId,
+            mode: open.mode,
+            modIds: open.mods.map((mod) => mod.id),
+          }}
           profiles={profiles}
-          initialMode={open.mode}
           onClose={close}
           onConfirm={(plan, choices, targetName, replaced) => {
             close();

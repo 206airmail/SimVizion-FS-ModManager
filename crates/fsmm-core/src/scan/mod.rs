@@ -28,7 +28,9 @@ pub use health::assess;
 
 /// Bump whenever `read_mod` would produce a different record for the same file, so cached
 /// records from older versions are read again.
-pub const SCAN_VERSION: u32 = 1;
+///
+/// Version 2: records carry the content fingerprint (plan M6).
+pub const SCAN_VERSION: u32 = 2;
 
 /// `NotAMod` detail: the file is not a readable zip, or the folder cannot be read.
 pub const NOT_A_MOD_UNREADABLE: &str = "unreadableArchive";
@@ -54,6 +56,9 @@ pub struct ModRecord {
     pub path: PathBuf,
     pub entry: ModEntry,
     pub icon: Option<IconLocation>,
+    /// A stable hash of the mod's content list, see [`ModContainer::fingerprint`]; used by
+    /// Compare mode. Internal, so not on `ModEntry`. Empty when the mod could not be opened.
+    pub fingerprint: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -152,14 +157,18 @@ pub fn read_mod(entry: &FolderEntry, profile_id: &str, languages: &[&str]) -> Mo
         source: ModSource::Unknown,
         update: UpdateState::Unknown,
         also_in: Vec::new(),
+        tags: Vec::new(),
+        note: None,
     };
     let mut icon = None;
+    let mut fingerprint = String::new();
 
     match ModContainer::open(&entry.path) {
         Err(_) => mod_entry
             .issues
             .push(not_a_mod(NOT_A_MOD_UNREADABLE.to_string())),
         Ok(mut container) => {
+            fingerprint = container.fingerprint();
             if container.find("modDesc.xml").is_none() {
                 mod_entry.issues.push(missing_mod_desc_issue(&container));
             } else {
@@ -187,6 +196,7 @@ pub fn read_mod(entry: &FolderEntry, profile_id: &str, languages: &[&str]) -> Mo
         path: entry.path.clone(),
         entry: mod_entry,
         icon,
+        fingerprint,
     }
 }
 

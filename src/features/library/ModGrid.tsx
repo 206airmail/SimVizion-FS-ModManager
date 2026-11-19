@@ -9,6 +9,7 @@ import { Pill } from '../../ui/Pill';
 import { handleCollectionKey, pressModifiers, type CollectionProps } from './collection';
 import { ModIcon } from './ModIcon';
 import { StatusMarks } from './StatusMarks';
+import { TagMark } from './TagMark';
 
 const CARD_MIN_WIDTH = 150;
 const CARD_HEIGHT = 204;
@@ -124,6 +125,11 @@ const ModCard = memo(function ModCard({
         <div className="mm-card__marks">
           <StatusMarks mod={mod} />
         </div>
+        {(mod.tags.length > 0 || mod.note) && (
+          <div className="mm-card__tagmark">
+            <TagMark mod={mod} />
+          </div>
+        )}
       </div>
       <div className="mm-card__body">
         <div className="mm-card__title sv-truncate" title={mod.fileName}>

@@ -13,7 +13,7 @@
 //! (one query, then one transaction), a progress mutex (tried, never waited on mid-scan) and
 //! the map of last scans (inserting one `Arc`).
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU32, Ordering};
@@ -25,10 +25,15 @@ use rayon::prelude::*;
 use crate::container::{IconLocation, ModContainer};
 use crate::discovery::{suggest_profiles, GameContext};
 use crate::icons;
-use crate::model::{ApiError, ErrorCode, ModEntry, Profile, ScanProgress};
+use crate::model::{ApiError, ErrorCode, ModEntry, ModFormat, Profile, ScanProgress};
 use crate::scan::{self, ModRecord};
 use crate::store::{path_key, CachedMod, FileStamp, Store, StoreError, StoredProfile};
 
+mod compare;
+#[cfg(test)]
+mod fixtures;
+mod meta;
+mod savegames;
 mod switching;
 mod transfer;
 
@@ -55,7 +60,31 @@ struct Scan {
     /// `stamps[i]` belongs to `records[i]`.
     stamps: Vec<FileStamp>,
     by_id: HashMap<String, usize>,
-    names: HashSet<String>,
+    /// Lower-cased mod name → index of the record that stands for it. When several records
+    /// share a name (two spellings that differ by case, or a zip and an unpacked folder), the
+    /// zip wins, then the smaller file name (compared as written), so the pick never depends on
+    /// listing order.
+    names: HashMap<String, usize>,
+}
+
+/// Builds [`Scan::names`]; see there for how duplicates are decided.
+fn index_by_name(records: &[ModRecord]) -> HashMap<String, usize> {
+    let rank = |i: usize| {
+        let entry = &records[i].entry;
+        (entry.format != ModFormat::Zip, entry.file_name.as_str())
+    };
+    let mut names: HashMap<String, usize> = HashMap::with_capacity(records.len());
+    for (i, record) in records.iter().enumerate() {
+        names
+            .entry(record.entry.mod_name.to_lowercase())
+            .and_modify(|current| {
+                if rank(i) < rank(*current) {
+                    *current = i;
+                }
+            })
+            .or_insert(i);
+    }
+    names
 }
 
 pub struct Library {
@@ -68,6 +97,9 @@ pub struct Library {
     last_ctx: Mutex<Option<GameContext>>,
     /// The busy and cancel flags and the plans of file operations (plan M5).
     transfer: transfer::TransferState,
+    /// The busy and cancel flags of savegame hashing (plan M6), apart from `transfer`'s so a
+    /// hash run and a file operation never block each other.
+    hashing: savegames::HashState,
     #[cfg(test)]
     decodes: std::sync::atomic::AtomicUsize,
 }
@@ -82,6 +114,7 @@ impl Library {
             scans: RwLock::new(HashMap::new()),
             last_ctx: Mutex::new(None),
             transfer: transfer::TransferState::default(),
+            hashing: savegames::HashState::default(),
             #[cfg(test)]
             decodes: std::sync::atomic::AtomicUsize::new(0),
         }
@@ -148,6 +181,9 @@ impl Library {
             })
             .collect();
 
+        // One query for every mod's tags and note.
+        let meta = self.store.all_mod_meta()?;
+
         Ok(scan
             .records
             .iter()
@@ -157,9 +193,13 @@ impl Library {
                 let name = entry.mod_name.to_lowercase();
                 entry.also_in = others
                     .iter()
-                    .filter(|(_, other)| other.names.contains(&name))
+                    .filter(|(_, other)| other.names.contains_key(&name))
                     .map(|(id, _)| (*id).to_string())
                     .collect();
+                if let Some(meta) = meta.get(&name) {
+                    entry.tags.clone_from(&meta.tags);
+                    entry.note.clone_from(&meta.note);
+                }
                 entry.icon = record
                     .icon
                     .as_ref()
@@ -345,6 +385,7 @@ impl Library {
             slots[i] = Some(CachedMod {
                 entry: record.entry,
                 icon: record.icon,
+                fingerprint: record.fingerprint,
             });
         }
 
@@ -365,6 +406,7 @@ impl Library {
                     path: entry.path.clone(),
                     entry: cached.entry,
                     icon: cached.icon,
+                    fingerprint: cached.fingerprint,
                 })
             })
             .collect();
@@ -381,10 +423,7 @@ impl Library {
                 .enumerate()
                 .map(|(i, r)| (r.entry.id.clone(), i))
                 .collect(),
-            names: records
-                .iter()
-                .map(|r| r.entry.mod_name.to_lowercase())
-                .collect(),
+            names: index_by_name(&records),
             records,
             stamps,
         });
