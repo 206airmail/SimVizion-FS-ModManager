@@ -1,0 +1,15 @@
+[package]
+name = "fsmm-core"
+description = "Core library for SimVizion Mod Manager: no UI or Tauri dependencies."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+serde = { workspace = true }
+# Generates the TypeScript side of the data contract from the Rust types.
+ts-rs = "12"
+
+[dev-dependencies]
+serde_json = { workspace = true }

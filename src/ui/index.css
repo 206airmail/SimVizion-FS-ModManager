@@ -1,0 +1,727 @@
+/*
+ * SimVizion primitives. Values follow the simvizion-ui skill references
+ * (controls.md, layouts.md, tables.md, extended-components.md, notifications.md).
+ * Colours come only from tokens.css.
+ */
+
+/* ---------- Buttons ---------- */
+.sv-button {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 32px;
+  padding: 0 10px;
+  border: 1px solid var(--sv-border);
+  border-radius: var(--sv-radius-control);
+  background: var(--sv-recessed);
+  color: var(--sv-text);
+  font: 500 13px/1 var(--sv-font);
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background-color 100ms ease-out,
+    border-color 100ms ease-out,
+    color 100ms ease-out;
+}
+.sv-button > svg {
+  flex: none;
+  color: var(--sv-text-secondary);
+  transition: color 100ms ease-out;
+}
+.sv-button:hover {
+  background: var(--sv-hover-bg);
+  border-color: var(--sv-hover-border);
+}
+.sv-button:hover > svg {
+  color: var(--sv-text);
+}
+.sv-button:active {
+  background: var(--sv-secondary-pressed);
+}
+.sv-button:focus-visible {
+  outline: none;
+  border-color: var(--sv-teal);
+}
+.sv-button[aria-pressed='true'] {
+  background: var(--sv-selected-bg);
+  border-color: var(--sv-selected-border);
+}
+.sv-button[aria-pressed='true'] > svg {
+  color: var(--sv-teal);
+}
+
+.sv-button--primary {
+  background: var(--sv-lime);
+  border-color: var(--sv-lime);
+  color: var(--sv-window);
+  font-weight: 600;
+}
+.sv-button--primary > svg,
+.sv-button--primary:hover > svg {
+  color: var(--sv-window);
+}
+.sv-button--primary:hover {
+  background: var(--sv-primary-hover);
+  border-color: var(--sv-primary-hover);
+}
+.sv-button--primary:active {
+  background: var(--sv-primary-pressed);
+  border-color: var(--sv-primary-pressed);
+}
+/* Lime surfaces need a contrasting ring: a teal border alone is not visible on them. */
+.sv-button--primary:focus-visible {
+  border-color: var(--sv-lime);
+  outline: 2px solid var(--sv-teal);
+  outline-offset: 1px;
+  box-shadow: inset 0 0 0 2px var(--sv-window);
+}
+.sv-button--primary.sv-button--illuminated:not(:disabled):not(:focus-visible) {
+  box-shadow: var(--sv-primary-halo);
+}
+
+.sv-button--destructive {
+  background: var(--sv-destructive-bg);
+  border-color: var(--sv-error);
+  color: var(--sv-destructive-hover);
+}
+.sv-button--destructive > svg,
+.sv-button--destructive:hover > svg {
+  color: var(--sv-destructive-hover);
+}
+.sv-button--destructive:hover {
+  background: var(--sv-destructive-bg);
+  border-color: var(--sv-destructive-hover);
+}
+.sv-button--destructive:active {
+  background: var(--sv-destructive-pressed-bg);
+  border-color: var(--sv-destructive-pressed);
+}
+.sv-button--destructive:focus-visible {
+  border-color: var(--sv-teal);
+}
+
+.sv-button--compact {
+  min-height: 28px;
+  padding: 0 8px;
+}
+.sv-button--icon {
+  width: 32px;
+  padding: 0;
+}
+.sv-button--icon.sv-button--compact {
+  width: 28px;
+}
+
+.sv-button:disabled {
+  background: var(--sv-disabled-bg);
+  border-color: var(--sv-disabled-border);
+  color: var(--sv-disabled-text);
+  box-shadow: none;
+  cursor: not-allowed;
+}
+.sv-button:disabled > svg {
+  color: var(--sv-disabled-text);
+}
+
+/* ---------- Search field ---------- */
+.sv-search {
+  position: relative;
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  height: 32px;
+  border: 1px solid var(--sv-border);
+  border-radius: var(--sv-radius-control);
+  background: var(--sv-recessed);
+  transition: border-color 100ms ease-out;
+}
+.sv-search--compact {
+  height: 28px;
+}
+.sv-search:hover {
+  border-color: var(--sv-hover-border);
+}
+.sv-search:focus-within {
+  border-color: var(--sv-teal);
+}
+.sv-search__icon {
+  position: absolute;
+  left: 8px;
+  color: var(--sv-text-muted);
+  pointer-events: none;
+}
+.sv-search__input {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  padding: 0 28px;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: var(--sv-text);
+  -webkit-user-select: text;
+  user-select: text;
+  cursor: text;
+}
+.sv-search__input::placeholder {
+  color: var(--sv-text-muted);
+}
+.sv-search__clear {
+  position: absolute;
+  right: 3px;
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--sv-text-secondary);
+  cursor: pointer;
+}
+.sv-search__clear:hover {
+  background: var(--sv-hover-bg);
+  color: var(--sv-text);
+}
+.sv-search__clear:focus-visible {
+  outline: 1px solid var(--sv-teal);
+}
+
+/* ---------- Dropdown: field and menu form one continuous shape ---------- */
+.sv-select {
+  position: relative;
+  flex: none;
+}
+.sv-select__field {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  height: 32px;
+  padding: 0 6px 0 8px;
+  border: 1px solid var(--sv-border);
+  border-radius: var(--sv-radius-control);
+  background: var(--sv-recessed);
+  color: var(--sv-text);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 100ms ease-out;
+}
+.sv-select--compact .sv-select__field {
+  height: 28px;
+}
+.sv-select__field:hover {
+  border-color: var(--sv-hover-border);
+}
+.sv-select__field:focus-visible {
+  outline: none;
+  border-color: var(--sv-teal);
+}
+.sv-select--open .sv-select__field {
+  border-color: var(--sv-teal);
+  border-bottom-color: transparent;
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+}
+.sv-select__prefix {
+  flex: none;
+  color: var(--sv-text-muted);
+}
+.sv-select__value {
+  flex: 1;
+}
+.sv-select__chevron {
+  flex: none;
+  color: var(--sv-text-secondary);
+}
+.sv-select__menu {
+  position: absolute;
+  z-index: 30;
+  top: 100%;
+  right: 0;
+  left: 0;
+  max-height: 224px;
+  margin: -1px 0 0;
+  padding: 2px 0;
+  overflow: auto;
+  list-style: none;
+  border: 1px solid var(--sv-teal);
+  border-top: 0;
+  border-radius: 0 0 var(--sv-radius-control) var(--sv-radius-control);
+  background: var(--sv-recessed);
+  box-shadow: var(--sv-shadow);
+}
+.sv-select__option {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 8px 0 6px;
+  /* Space for the keyboard indicator is always reserved so rows never shift. */
+  box-shadow: inset 3px 0 0 transparent;
+  color: var(--sv-text);
+  cursor: pointer;
+}
+.sv-select__option[data-highlighted='true'] {
+  background: var(--sv-hover-bg);
+  box-shadow: inset 3px 0 0 var(--sv-selected-border);
+}
+.sv-select__option[aria-selected='true'] {
+  background: var(--sv-selected-bg);
+}
+.sv-select__check {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 14px;
+  color: var(--sv-teal);
+}
+.sv-select__option-label {
+  flex: 1;
+}
+.sv-select__option-hint {
+  flex: none;
+  color: var(--sv-text-muted);
+  font-size: 12px;
+}
+
+/* ---------- Segmented control ---------- */
+.sv-segmented {
+  display: inline-flex;
+  flex: none;
+  align-items: stretch;
+  height: 28px;
+  overflow: hidden;
+  border: 1px solid var(--sv-border);
+  border-radius: var(--sv-radius-control);
+  background: var(--sv-recessed);
+}
+.sv-segmented > * + * {
+  border-left: 1px solid var(--sv-border);
+}
+.sv-segmented > .sv-tooltip-anchor {
+  display: flex;
+}
+.sv-segmented__option {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 10px;
+  border: 0;
+  background: transparent;
+  color: var(--sv-text-secondary);
+  font: 500 13px/1 var(--sv-font);
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background-color 100ms ease-out,
+    color 100ms ease-out;
+}
+.sv-segmented__option--icon {
+  justify-content: center;
+  width: 30px;
+  padding: 0;
+}
+.sv-segmented__option:hover {
+  background: var(--sv-hover-bg);
+  color: var(--sv-text);
+}
+.sv-segmented__option[aria-checked='true'] {
+  background: var(--sv-selected-bg);
+  box-shadow: inset 0 0 0 1px var(--sv-selected-border);
+  color: var(--sv-text);
+}
+.sv-segmented__option:focus-visible {
+  outline: 1px solid var(--sv-teal);
+  outline-offset: -3px;
+}
+
+/* ---------- Pills, tags, count chips ---------- */
+.sv-pill {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+  min-height: 20px;
+  padding: 0 6px;
+  border: 1px solid var(--sv-border);
+  border-radius: var(--sv-radius-control);
+  background: var(--sv-elevated);
+  color: var(--sv-text-secondary);
+  font: 500 11px/1.2 var(--sv-font);
+  white-space: nowrap;
+}
+.sv-pill--compact {
+  min-height: 18px;
+}
+.sv-pill--info,
+.sv-pill--warning,
+.sv-pill--error,
+.sv-pill--success {
+  color: var(--sv-text);
+}
+.sv-pill--info {
+  border-color: var(--sv-tint-info-edge);
+  background: var(--sv-tint-info-bg);
+}
+.sv-pill--warning {
+  border-color: var(--sv-tint-warning-edge);
+  background: var(--sv-tint-warning-bg);
+}
+.sv-pill--error {
+  border-color: var(--sv-tint-error-edge);
+  background: var(--sv-tint-error-bg);
+}
+.sv-pill--success {
+  border-color: var(--sv-tint-success-edge);
+  background: var(--sv-tint-success-bg);
+}
+.sv-pill--info .sv-pill__icon {
+  color: var(--sv-status-info);
+}
+.sv-pill--warning .sv-pill__icon {
+  color: var(--sv-warning);
+}
+.sv-pill--error .sv-pill__icon {
+  color: var(--sv-error);
+}
+.sv-pill--success .sv-pill__icon {
+  color: var(--sv-status-success);
+}
+
+.sv-count-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: var(--sv-elevated);
+  color: var(--sv-text-muted);
+  font: 500 11px/1 var(--sv-font);
+}
+[aria-checked='true'] > .sv-count-chip,
+[aria-current='page'] > .sv-count-chip {
+  background: var(--sv-window);
+  color: var(--sv-text-readable-secondary);
+}
+
+/* Semantic icon colours, used wherever an icon reports a state. */
+.sv-tone-info {
+  color: var(--sv-status-info);
+}
+.sv-tone-warning {
+  color: var(--sv-warning);
+}
+.sv-tone-error {
+  color: var(--sv-error);
+}
+.sv-tone-success {
+  color: var(--sv-status-success);
+}
+
+.sv-status-dot {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--sv-text-muted);
+}
+.sv-status-dot--on {
+  background: var(--sv-lime);
+}
+.sv-status-dot--success {
+  background: var(--sv-status-success);
+}
+.sv-status-dot--warning {
+  background: var(--sv-warning);
+}
+
+/* ---------- Panels ---------- */
+.sv-panel {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  border: 1px solid var(--sv-border);
+  border-radius: var(--sv-radius-panel);
+  background: var(--sv-panel);
+}
+.sv-panel__header {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 36px;
+  padding: 0 8px 0 12px;
+}
+.sv-panel__title {
+  font-size: 14px;
+  font-weight: 600;
+}
+/* Compact uppercase identifier for a panel, as in the SimVizion references. */
+.sv-panel__eyebrow {
+  color: var(--sv-text-muted);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.sv-panel__content {
+  flex: 1;
+  min-height: 0;
+  padding: var(--sv-pad-panel);
+  overflow: auto;
+}
+.sv-panel__footer {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  border-top: 1px solid var(--sv-border);
+  background: var(--sv-elevated);
+}
+.sv-divider {
+  flex: none;
+  height: 1px;
+  margin: 0;
+  border: 0;
+  background: var(--sv-border);
+}
+
+/* ---------- Tooltip ---------- */
+.sv-tooltip-anchor {
+  display: inline-flex;
+  min-width: 0;
+}
+.sv-tooltip {
+  position: fixed;
+  z-index: 100;
+  top: 0;
+  left: 0;
+  max-width: 280px;
+  padding: 6px 10px;
+  border: 1px solid var(--sv-border);
+  border-radius: var(--sv-radius-control);
+  background: var(--sv-elevated);
+  box-shadow: var(--sv-shadow);
+  color: var(--sv-text);
+  font-size: 12px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 100ms ease-out;
+}
+
+/* ---------- Banners ---------- */
+.sv-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--sv-border);
+  border-radius: var(--sv-radius-panel);
+  background: var(--sv-elevated);
+}
+.sv-banner--info {
+  border-color: var(--sv-tint-info-border);
+  background: var(--sv-tint-info-bg);
+}
+.sv-banner--warning {
+  border-color: var(--sv-tint-warning-border);
+  background: var(--sv-tint-warning-bg);
+}
+.sv-banner--error {
+  border-color: var(--sv-tint-error-border);
+  background: var(--sv-tint-error-bg);
+}
+.sv-banner--success {
+  border-color: var(--sv-tint-success-border);
+  background: var(--sv-tint-success-bg);
+}
+.sv-banner__icon {
+  flex: none;
+}
+.sv-banner--info .sv-banner__icon {
+  color: var(--sv-status-info);
+}
+.sv-banner--warning .sv-banner__icon {
+  color: var(--sv-warning);
+}
+.sv-banner--error .sv-banner__icon {
+  color: var(--sv-error);
+}
+.sv-banner--success .sv-banner__icon {
+  color: var(--sv-status-success);
+}
+.sv-banner__body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  padding-top: 1px;
+}
+.sv-banner__title {
+  font-weight: 600;
+}
+.sv-banner__text {
+  color: var(--sv-text-readable-secondary);
+}
+.sv-banner__actions {
+  display: flex;
+  flex: none;
+  gap: 6px;
+}
+
+/* ---------- Empty, loading and error states ---------- */
+.sv-empty {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 0;
+  padding: 24px;
+  text-align: center;
+}
+.sv-empty__icon {
+  margin-bottom: 6px;
+  color: var(--sv-text-muted);
+}
+.sv-empty--error .sv-empty__icon {
+  color: var(--sv-error);
+}
+.sv-empty__title {
+  font-size: 14px;
+  font-weight: 600;
+}
+.sv-empty__text {
+  max-width: 360px;
+  color: var(--sv-text-secondary);
+}
+.sv-empty__action {
+  margin-top: 10px;
+}
+
+.sv-skeleton {
+  display: block;
+  height: 10px;
+  border-radius: 3px;
+  background: var(--sv-skeleton-a);
+  animation: sv-skeleton-pulse 1.2s ease-in-out infinite alternate;
+}
+@keyframes sv-skeleton-pulse {
+  to {
+    background: var(--sv-skeleton-b);
+  }
+}
+
+/* ---------- Data rows (tables and dense lists) ---------- */
+.sv-table__head {
+  display: grid;
+  align-items: center;
+  height: 32px;
+  border-bottom: 1px solid var(--sv-border);
+  background: var(--sv-elevated);
+  font-size: 12px;
+  font-weight: 500;
+}
+.sv-table__sort {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  height: 100%;
+  padding: 0 12px;
+  border: 0;
+  background: transparent;
+  color: var(--sv-text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.sv-table__sort--end {
+  justify-content: flex-end;
+}
+/* The arrow slot is always present so headers never shift; only its visibility changes. */
+.sv-table__sort-arrow {
+  flex: none;
+  color: var(--sv-text-muted);
+  opacity: 0;
+}
+.sv-table__sort:hover .sv-table__sort-arrow,
+.sv-table__sort:focus-visible .sv-table__sort-arrow {
+  opacity: 1;
+}
+.sv-table__sort[data-active='true'] .sv-table__sort-arrow {
+  color: var(--sv-teal);
+  opacity: 1;
+}
+.sv-table__sort:focus-visible {
+  outline: 1px solid var(--sv-teal);
+  outline-offset: -2px;
+}
+.sv-table__head-cell {
+  padding: 0 12px;
+}
+
+.sv-row {
+  display: grid;
+  align-items: center;
+  height: 36px;
+  border-bottom: 1px solid var(--sv-border);
+  cursor: default;
+}
+.sv-row:hover {
+  background: var(--sv-hover-bg);
+}
+.sv-row[aria-selected='true'] {
+  background: var(--sv-selected-bg);
+}
+.sv-cell {
+  min-width: 0;
+  padding: 0 12px;
+}
+.sv-cell--end {
+  text-align: right;
+}
+.sv-cell--secondary {
+  color: var(--sv-text-secondary);
+}
+
+/* ---------- Links and link-styled buttons ---------- */
+.sv-link,
+.sv-link-button {
+  color: var(--sv-link);
+  text-decoration: none;
+}
+.sv-link-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0;
+  border: 0;
+  border-radius: 2px;
+  background: none;
+  cursor: pointer;
+}
+.sv-link:hover,
+.sv-link:focus-visible,
+.sv-link-button:hover,
+.sv-link-button:focus-visible {
+  color: var(--sv-link-hover);
+  text-decoration: underline;
+}
+.sv-link:focus-visible,
+.sv-link-button:focus-visible {
+  outline: 1px solid var(--sv-teal);
+  outline-offset: 2px;
+}
