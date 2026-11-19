@@ -7,4 +7,11 @@ export default tseslint.config(
   js.configs.recommended,
   tseslint.configs.recommended,
   reactHooks.configs.flat.recommended,
+  {
+    // Release helper scripts run under Node, not in the app.
+    files: ['scripts/**/*.mjs'],
+    languageOptions: {
+      globals: { process: 'readonly', console: 'readonly', URL: 'readonly', Buffer: 'readonly' },
+    },
+  },
 );
