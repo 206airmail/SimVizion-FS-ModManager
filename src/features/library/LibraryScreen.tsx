@@ -9,10 +9,12 @@ import {
   SearchX,
 } from 'lucide-react';
 import { useCallback, useDeferredValue, useEffect, useMemo, useState } from 'react';
-import type { GameStatus, ModEntry, Profile } from '../../api';
+import type { GameStatus, ModEntry, Profile, ScanProgress } from '../../api';
 import { api } from '../../api/client';
+import { describeError } from '../../lib/errors';
 import { formatCount, tailPath } from '../../lib/format';
-import { useAsync } from '../../lib/useAsync';
+import { useActionError } from '../../lib/useActionError';
+import { useAsync, type Report } from '../../lib/useAsync';
 import { useMediaQuery } from '../../lib/useMediaQuery';
 import { strings } from '../../strings';
 import { Button, IconButton } from '../../ui/Button';
@@ -23,6 +25,7 @@ import { SearchField } from '../../ui/SearchField';
 import { SegmentedControl } from '../../ui/SegmentedControl';
 import { Select, type SelectOption } from '../../ui/Select';
 import { Tooltip } from '../../ui/Tooltip';
+import { ActionErrorBanner } from '../ActionErrorBanner';
 import type { CollectionProps } from './collection';
 import { Inspector } from './Inspector';
 import { kindOrder } from './labels';
@@ -72,8 +75,12 @@ export function LibraryScreen({ profile, profiles, game }: LibraryScreenProps) {
   const narrow = useMediaQuery(NARROW_QUERY);
   const inspectorOpen = narrow ? drawerOpen : docked;
 
-  const load = useCallback(() => api.listMods(profile.id), [profile.id]);
-  const { state, reload } = useAsync(load);
+  const load = useCallback(
+    (report: Report<ScanProgress>) => api.listMods(profile.id, report),
+    [profile.id],
+  );
+  const { state, progress, reload } = useAsync(load);
+  const openFolder = useActionError(profile.id);
   const allMods = state.status === 'ready' ? state.data : NO_MODS;
 
   const deferredQuery = useDeferredValue(query);
@@ -174,7 +181,12 @@ export function LibraryScreen({ profile, profiles, game }: LibraryScreenProps) {
             </Tooltip>
             <span className="mm-library__gap" />
             {!profile.isActive && <Button variant="primary">{t.setActive}</Button>}
-            <IconButton icon={FolderOpen} label={t.openFolder} size="standard" />
+            <IconButton
+              icon={FolderOpen}
+              label={t.openFolder}
+              size="standard"
+              onClick={() => void openFolder.run(() => api.openProfileFolder(profile.id))}
+            />
             <IconButton icon={RefreshCw} label={t.rescan} size="standard" onClick={reload} />
           </div>
 
@@ -246,13 +258,22 @@ export function LibraryScreen({ profile, profiles, game }: LibraryScreenProps) {
           </div>
         </div>
 
-        {state.status === 'loading' && <LoadingRows />}
+        {openFolder.message !== null && (
+          <ActionErrorBanner
+            className="mm-library__notice"
+            title={strings.actionFailed.openFolder}
+            message={openFolder.message}
+            onDismiss={openFolder.dismiss}
+          />
+        )}
+
+        {state.status === 'loading' && <LoadingRows progress={progress} />}
         {state.status === 'error' && (
           <EmptyState
             tone="error"
             icon={FolderOpen}
             title={strings.states.loadFailedTitle}
-            description={strings.states.loadFailedText(state.message.replace(/\.$/, ''))}
+            description={strings.states.loadFailedText(describeError(state.error))}
             action={<Button onClick={reload}>{strings.states.retry}</Button>}
           />
         )}
@@ -313,9 +334,34 @@ export function LibraryScreen({ profile, profiles, game }: LibraryScreenProps) {
 
 const SKELETON_WIDTHS = [62, 48, 71, 39, 56, 66, 44, 59, 52, 68, 41, 63, 50, 57];
 
-function LoadingRows() {
+/** Skeleton rows while a folder is read; once the core reports progress, a bar above them. */
+function LoadingRows({ progress }: { progress: ScanProgress | null }) {
+  const counted = progress !== null && progress.total > 0 ? progress : null;
   return (
     <div className="mm-loading" role="status" aria-label={strings.states.loadingMods}>
+      {counted && (
+        <div className="mm-progress">
+          <div className="mm-progress__label" aria-hidden="true">
+            <span>{strings.states.readingMods(counted.done, counted.total)}</span>
+            <span className="sv-num">
+              {strings.states.readingPercent(counted.done / counted.total)}
+            </span>
+          </div>
+          <div
+            className="mm-progress__track"
+            role="progressbar"
+            aria-label={strings.states.readingMods(counted.done, counted.total)}
+            aria-valuemin={0}
+            aria-valuemax={counted.total}
+            aria-valuenow={counted.done}
+          >
+            <div
+              className="mm-progress__fill"
+              style={{ width: `${Math.min(100, (counted.done / counted.total) * 100)}%` }}
+            />
+          </div>
+        </div>
+      )}
       {SKELETON_WIDTHS.map((width, index) => (
         <div key={index} className="mm-loading__row">
           <span className="sv-skeleton mm-loading__icon" />

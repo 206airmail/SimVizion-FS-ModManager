@@ -29,6 +29,8 @@ export interface ProfileRailProps {
   section: Section;
   onSelectProfile: (id: string) => void;
   onSelectSection: (section: Section) => void;
+  /** Opens the folder picker and adds the chosen folder as a profile. */
+  onAddFolder: () => void;
 }
 
 export function ProfileRail({
@@ -37,6 +39,7 @@ export function ProfileRail({
   section,
   onSelectProfile,
   onSelectSection,
+  onAddFolder,
 }: ProfileRailProps) {
   const t = strings.rail;
   const collapsed = useMediaQuery(RAIL_COLLAPSE_QUERY);
@@ -56,7 +59,7 @@ export function ProfileRail({
     >
       <div className="sv-panel__header mm-rail__header">
         <span className="sv-panel__eyebrow">{t.profiles}</span>
-        <IconButton icon={FolderPlus} label={t.addFolder} />
+        <IconButton icon={FolderPlus} label={t.addFolder} onClick={onAddFolder} />
       </div>
 
       <div className="mm-rail__scroll">

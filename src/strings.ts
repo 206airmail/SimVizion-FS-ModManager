@@ -1,19 +1,40 @@
 // All user-facing text lives here so the app can be translated later.
 
-import type { IssueKind, ModKind, ModSource, Severity } from './api';
+import type { ErrorCode, IssueKind, ModKind, ModSource, Severity } from './api';
 import { formatCount } from './lib/format';
 
 const plural = (count: number, one: string, many: string) => (count === 1 ? one : many);
 const mods = (count: number) => `${formatCount(count)} ${plural(count, 'mod', 'mods')}`;
+
+/** Reason codes the core puts in the detail of a `notAMod` issue. */
+const notAModDetail: ReadonlyMap<string, string> = new Map([
+  ['unreadableArchive', 'The archive could not be opened'],
+  ['noModDesc', 'No modDesc.xml was found'],
+  ['invalidModDesc', 'modDesc.xml could not be read'],
+]);
 
 export const strings = {
   app: {
     name: 'SimVizion',
     product: 'Mod Manager',
     subtitle: 'Farming Simulator 25',
-    version: 'Prototype 0.1.0',
+    version: 'Version 0.1.0',
     sampleData: 'Sample data',
-    sampleDataHint: 'This prototype shows generated sample mods, not your real folders.',
+    sampleDataHint: 'This view shows generated sample mods, not your real folders.',
+  },
+
+  errors: {
+    profileNotFound: 'That mod folder is no longer in your list.',
+    folderMissing: 'The folder could not be found. It may have been moved or deleted.',
+    folderUnreadable: 'The folder could not be read. You may not have permission to open it.',
+    internal: 'Something went wrong inside the app.',
+  } satisfies Record<ErrorCode, string>,
+
+  actionFailed: {
+    addFolder: 'Could not add the folder',
+    openFolder: 'Could not open the folder',
+    showInFolder: 'Could not show the mod in its folder',
+    dismiss: 'Dismiss',
   },
 
   header: {
@@ -88,9 +109,11 @@ export const strings = {
 
   states: {
     loadingMods: 'Loading mods',
+    readingMods: (done: number, total: number) => `Reading ${formatCount(done)} of ${mods(total)}`,
+    readingPercent: (fraction: number) => `${Math.floor(fraction * 100)}%`,
     loadFailedTitle: 'Could not read this folder',
     loadFailedText: (message: string) =>
-      `${message}. Nothing was changed. Check that the folder still exists, then try again.`,
+      `${message} Nothing was changed, so it is safe to try again.`,
     retry: 'Try again',
     emptyFolderTitle: 'This folder has no mods',
     emptyFolderText: 'Copy mods into the folder, or pick another profile from the list.',
@@ -195,6 +218,26 @@ export const strings = {
     descVersionMismatch: 'The mod may have been made for a different game version.',
     missingDependency: 'A mod this one requires is not in this profile.',
   } satisfies Record<IssueKind, string>,
+
+  /**
+   * One sentence from the data in `ModIssue.detail` (see "Issue details carry data, not
+   * sentences" in docs/dev/decisions.md). An absent or unrecognised detail gives null.
+   */
+  issueDetail: {
+    notAMod: (detail) => notAModDetail.get(detail ?? '') ?? null,
+    invalidFileName: () => null,
+    nestedArchive: (detail) => (detail ? `Contains ${detail} inside the archive` : null),
+    zipAndFolderTwin: (detail) => (detail ? `Same name as ${detail}` : null),
+    conflictCopy: (detail) => (detail ? `Copy of ${detail}` : null),
+    descVersionMismatch: (detail) =>
+      detail !== null && /^\d+$/.test(detail)
+        ? `Newer than the game's descVersion ${detail}`
+        : null,
+    missingDependency: (detail) =>
+      detail
+        ? `Requires ${detail}, which ${detail.includes(',') ? 'are' : 'is'} not in this profile`
+        : null,
+  } satisfies Record<IssueKind, (detail: string | null) => string | null>,
 
   severity: {
     error: 'Error',
