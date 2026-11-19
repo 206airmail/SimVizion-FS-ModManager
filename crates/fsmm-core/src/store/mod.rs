@@ -24,6 +24,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use rusqlite::{params, Connection, OptionalExtension};
 
 use crate::container::IconLocation;
+use crate::discovery::ModsOverride;
 use crate::model::ModEntry;
 use crate::scan::SCAN_VERSION;
 
@@ -32,7 +33,8 @@ mod tests;
 
 /// Migrations of `library.sqlite`, applied in order. Index + 1 is the schema version a
 /// migration brings the file to. Never edit one that has shipped; append a new one.
-const LIBRARY_MIGRATIONS: &[&str] = &["
+const LIBRARY_MIGRATIONS: &[&str] = &[
+    "
     CREATE TABLE profiles (
         id       INTEGER PRIMARY KEY,
         name     TEXT NOT NULL,
@@ -40,7 +42,21 @@ const LIBRARY_MIGRATIONS: &[&str] = &["
         path_key TEXT NOT NULL UNIQUE,
         added_at INTEGER NOT NULL
     );
-"];
+",
+    "
+    CREATE TABLE ops (
+        id          INTEGER PRIMARY KEY,
+        at          INTEGER NOT NULL,
+        kind        TEXT NOT NULL,
+        from_active INTEGER NOT NULL,
+        from_dir    TEXT,
+        to_active   INTEGER NOT NULL,
+        to_dir      TEXT,
+        backup_file TEXT,
+        result      TEXT NOT NULL
+    );
+",
+];
 
 /// Migrations of `cache.sqlite`. The cache is disposable, so a file that fails to open or
 /// migrate is deleted and rebuilt.
@@ -95,6 +111,33 @@ pub struct StoredProfile {
     pub id: String,
     pub name: String,
     pub path: PathBuf,
+}
+
+/// A journaled write to `gameSettings.xml` (plan M4): what it replaced, what it wrote and how it
+/// ended. Holds the two override states and a backup file name, never any other file text.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StoredOp {
+    /// Short stable id, `o<rowid>`.
+    pub id: String,
+    /// Unix seconds.
+    pub at: i64,
+    /// `switch`, `undo` or `restore`.
+    pub kind: String,
+    pub from: ModsOverride,
+    pub to: ModsOverride,
+    pub backup_file: Option<String>,
+    /// `ok`, or the camelCase error code of a failed attempt.
+    pub result: String,
+}
+
+/// What [`Store::add_op`] needs to journal a write.
+#[derive(Debug, Clone, Copy)]
+pub struct NewOp<'a> {
+    pub kind: &'a str,
+    pub from: &'a ModsOverride,
+    pub to: &'a ModsOverride,
+    pub backup_file: Option<&'a str>,
+    pub result: &'a str,
 }
 
 /// What `scan::read_mod` produced for one file, before folder-level `assess`.
@@ -249,6 +292,61 @@ impl Store {
             [&key],
             profile_from_row,
         )?)
+    }
+
+    // ---- journal of writes to gameSettings.xml (library.sqlite) ----
+
+    /// Appends a journal row and returns its id (`o<rowid>`).
+    pub fn add_op(&self, op: &NewOp<'_>) -> Result<String, StoreError> {
+        let at = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_or(0, |d| i64::try_from(d.as_secs()).unwrap_or(i64::MAX));
+        let dir = |o: &ModsOverride| {
+            o.directory
+                .as_ref()
+                .map(|d| d.to_string_lossy().into_owned())
+        };
+        let conn = lock(&self.library);
+        conn.execute(
+            "INSERT INTO ops \
+             (at, kind, from_active, from_dir, to_active, to_dir, backup_file, result) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            params![
+                at,
+                op.kind,
+                op.from.active,
+                dir(op.from),
+                op.to.active,
+                dir(op.to),
+                op.backup_file,
+                op.result
+            ],
+        )?;
+        Ok(format!("o{}", conn.last_insert_rowid()))
+    }
+
+    /// The newest journal row whose result is `ok`.
+    pub fn latest_ok_op(&self) -> Result<Option<StoredOp>, StoreError> {
+        let conn = lock(&self.library);
+        Ok(conn
+            .query_row(
+                "SELECT id, at, kind, from_active, from_dir, to_active, to_dir, backup_file, \
+                 result FROM ops WHERE result = 'ok' ORDER BY id DESC LIMIT 1",
+                [],
+                op_from_row,
+            )
+            .optional()?)
+    }
+
+    /// Every journal row, oldest first.
+    pub fn ops(&self) -> Result<Vec<StoredOp>, StoreError> {
+        let conn = lock(&self.library);
+        let mut stmt = conn.prepare_cached(
+            "SELECT id, at, kind, from_active, from_dir, to_active, to_dir, backup_file, result \
+             FROM ops ORDER BY id",
+        )?;
+        let rows = stmt.query_map([], op_from_row)?;
+        Ok(rows.collect::<Result<Vec<_>, _>>()?)
     }
 
     // ---- scan cache (cache.sqlite) ----
@@ -474,6 +572,24 @@ fn profile_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<StoredProfile> 
         id: format!("p{}", row.get::<_, i64>(0)?),
         name: row.get(1)?,
         path: PathBuf::from(row.get::<_, String>(2)?),
+    })
+}
+
+fn op_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<StoredOp> {
+    let state = |active: usize, dir: usize| -> rusqlite::Result<ModsOverride> {
+        Ok(ModsOverride {
+            active: row.get(active)?,
+            directory: row.get::<_, Option<String>>(dir)?.map(PathBuf::from),
+        })
+    };
+    Ok(StoredOp {
+        id: format!("o{}", row.get::<_, i64>(0)?),
+        at: row.get(1)?,
+        kind: row.get(2)?,
+        from: state(3, 4)?,
+        to: state(5, 6)?,
+        backup_file: row.get(7)?,
+        result: row.get(8)?,
     })
 }
 
