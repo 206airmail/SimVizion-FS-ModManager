@@ -5,18 +5,43 @@
 //!
 //! Read-only: the file is opened for reading and streamed in chunks; nothing is written.
 
+use std::fs::File;
+use std::io::{self, Read};
 use std::path::Path;
-use std::sync::atomic::AtomicBool;
+use std::sync::atomic::{AtomicBool, Ordering};
 
-use super::FileOpError;
+use md5::{Digest, Md5};
+
+use super::{io_err, FileOpError, CHUNK};
+
+#[cfg(test)]
+mod tests;
 
 /// The game's `fileHash` for a mod zip: MD5 over the file's bytes followed by `mod_name`.
 /// `progress` receives bytes read since the last call. Checks `cancel` between chunks.
 pub fn game_md5(
-    _path: &Path,
-    _mod_name: &str,
-    _progress: &mut dyn FnMut(u64),
-    _cancel: &AtomicBool,
+    path: &Path,
+    mod_name: &str,
+    progress: &mut dyn FnMut(u64),
+    cancel: &AtomicBool,
 ) -> Result<String, FileOpError> {
-    todo!("WS-A")
+    let mut input = File::open(path).map_err(|e| io_err(&e))?;
+    let mut hasher = Md5::new();
+    let mut buf = vec![0u8; CHUNK];
+    loop {
+        // Checked before the end-of-file read too, so a cancel during the last chunk counts.
+        if cancel.load(Ordering::SeqCst) {
+            return Err(FileOpError::Cancelled);
+        }
+        let n = match input.read(&mut buf) {
+            Ok(0) => break,
+            Ok(n) => n,
+            Err(e) if e.kind() == io::ErrorKind::Interrupted => continue,
+            Err(e) => return Err(io_err(&e)),
+        };
+        hasher.update(&buf[..n]);
+        progress(n as u64);
+    }
+    hasher.update(mod_name.as_bytes());
+    Ok(format!("{:x}", hasher.finalize()))
 }

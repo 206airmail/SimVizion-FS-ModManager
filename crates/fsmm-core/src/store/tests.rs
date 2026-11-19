@@ -42,6 +42,7 @@ fn record(name: &str) -> CachedMod {
             rel: "icon.dds".into(),
             kind: IconKind::Dds,
         }),
+        fingerprint: format!("fingerprint of {name}"),
     }
 }
 
@@ -273,6 +274,7 @@ fn a_record_without_an_icon_round_trips() {
     let stored = CachedMod {
         entry: sample_entry("a"),
         icon: None,
+        fingerprint: String::new(),
     };
     store.put_mod(&path, stamp(1, 1), &stored).unwrap();
     assert_eq!(store.cached_mod(&path, stamp(1, 1)).unwrap(), Some(stored));
@@ -586,6 +588,261 @@ fn file_operations_are_journaled_apart_from_settings_writes() {
     // Undo only ever sees settings writes.
     assert!(store.latest_ok_op().unwrap().is_none());
     assert!(store.ops().unwrap().is_empty());
+}
+
+// ---------------------------------------------------------------- M6: migrations
+
+fn table_exists(conn: &Connection, name: &str) -> bool {
+    conn.query_row(
+        "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = ?1",
+        [name],
+        |r| r.get::<_, i64>(0),
+    )
+    .unwrap()
+        == 1
+}
+
+#[test]
+fn the_real_library_migrations_apply_from_every_older_version() {
+    for from in 0..=LIBRARY_MIGRATIONS.len() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        migrate(&mut conn, &LIBRARY_MIGRATIONS[..from]).unwrap();
+        if from >= 1 {
+            conn.execute(
+                "INSERT INTO profiles (name, path, path_key, added_at) VALUES ('m', 'C:\\m', 'c:\\m', 1)",
+                [],
+            )
+            .unwrap();
+        }
+        migrate(&mut conn, LIBRARY_MIGRATIONS).unwrap();
+        let version: i64 = conn
+            .query_row("SELECT version FROM schema_version", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(version, LIBRARY_MIGRATIONS.len() as i64, "from {from}");
+        for table in ["profiles", "ops", "file_ops", "mod_meta"] {
+            assert!(table_exists(&conn, table), "{table} from {from}");
+        }
+        if from >= 1 {
+            let kept: i64 = conn
+                .query_row("SELECT COUNT(*) FROM profiles", [], |r| r.get(0))
+                .unwrap();
+            assert_eq!(kept, 1, "profiles survive a migration from {from}");
+        }
+    }
+}
+
+#[test]
+fn the_real_cache_migrations_apply_from_every_older_version() {
+    for from in 0..=CACHE_MIGRATIONS.len() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        migrate(&mut conn, &CACHE_MIGRATIONS[..from]).unwrap();
+        if from >= 1 {
+            conn.execute(
+                "INSERT INTO mods (path_key, folder_key, size, mtime_ns, scan_version, entry_json) \
+                 VALUES ('c:\\m\\a.zip', 'c:\\m', 1, 1, 1, '{}')",
+                [],
+            )
+            .unwrap();
+        }
+        migrate(&mut conn, CACHE_MIGRATIONS).unwrap();
+        let version: i64 = conn
+            .query_row("SELECT version FROM schema_version", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(version, CACHE_MIGRATIONS.len() as i64, "from {from}");
+        for table in ["mods", "thumbnails", "file_hashes"] {
+            assert!(table_exists(&conn, table), "{table} from {from}");
+        }
+        // The fingerprint column exists, and an old row gets the empty default.
+        conn.execute(
+            "INSERT OR REPLACE INTO mods (path_key, folder_key, size, mtime_ns, scan_version, \
+             entry_json, fingerprint) VALUES ('c:\\m\\b.zip', 'c:\\m', 1, 1, 1, '{}', 'f')",
+            [],
+        )
+        .unwrap();
+        if from >= 1 {
+            let fingerprint: String = conn
+                .query_row(
+                    "SELECT fingerprint FROM mods WHERE path_key = 'c:\\m\\a.zip'",
+                    [],
+                    |r| r.get(0),
+                )
+                .unwrap();
+            assert_eq!(fingerprint, "", "from {from}");
+        }
+    }
+}
+
+#[test]
+fn the_scan_record_fingerprint_round_trips() {
+    let store = Store::open_in_memory().unwrap();
+    let path = mod_path("C:\\mods", "a.zip");
+    store.put_mod(&path, stamp(1, 1), &record("a")).unwrap();
+    let single = store.cached_mod(&path, stamp(1, 1)).unwrap().unwrap();
+    assert_eq!(single.fingerprint, "fingerprint of a");
+    let mut folder = store.cached_mods_in(Path::new("C:\\mods")).unwrap();
+    assert_eq!(
+        folder.take(&path, stamp(1, 1)).unwrap().fingerprint,
+        "fingerprint of a"
+    );
+}
+
+// ---------------------------------------------------------------- M6: hash cache
+
+#[test]
+fn a_cached_hash_hits_only_for_the_same_size_mtime_and_salt() {
+    let store = Store::open_in_memory().unwrap();
+    let path = mod_path("C:\\mods", "FS25_A.zip");
+    store
+        .put_hashes(&[((path.as_path(), stamp(5, 100), "FS25_A"), "abc123")])
+        .unwrap();
+    let get = |stamp: FileStamp, salt: &str| {
+        store
+            .cached_hashes(&[(path.as_path(), stamp, salt)])
+            .unwrap()
+            .remove(0)
+    };
+    assert_eq!(get(stamp(5, 100), "FS25_A").as_deref(), Some("abc123"));
+    assert_eq!(get(stamp(6, 100), "FS25_A"), None, "size changed");
+    assert_eq!(get(stamp(5, 101), "FS25_A"), None, "mtime changed");
+    assert_eq!(get(stamp(5, 100), "FS25_B"), None, "other salt");
+}
+
+#[test]
+fn hash_lookups_keep_the_order_asked_and_ignore_path_spelling() {
+    let store = Store::open_in_memory().unwrap();
+    let a = mod_path("C:\\mods", "FS25_A.zip");
+    let b = mod_path("C:\\mods", "FS25_B.zip");
+    store
+        .put_hashes(&[
+            ((a.as_path(), stamp(1, 1), "FS25_A"), "aaa"),
+            ((b.as_path(), stamp(2, 2), "FS25_B"), "bbb"),
+        ])
+        .unwrap();
+    let shouted = mod_path("c:/MODS", "fs25_a.ZIP");
+    let found = store
+        .cached_hashes(&[
+            (b.as_path(), stamp(2, 2), "FS25_B"),
+            (
+                mod_path("C:\\mods", "none.zip").as_path(),
+                stamp(1, 1),
+                "none",
+            ),
+            (shouted.as_path(), stamp(1, 1), "FS25_A"),
+        ])
+        .unwrap();
+    assert_eq!(
+        found,
+        vec![Some("bbb".to_string()), None, Some("aaa".to_string())]
+    );
+}
+
+#[test]
+fn a_new_hash_replaces_the_old_one_for_the_same_path_and_salt() {
+    let store = Store::open_in_memory().unwrap();
+    let path = mod_path("C:\\mods", "FS25_A.zip");
+    store
+        .put_hashes(&[((path.as_path(), stamp(1, 1), "FS25_A"), "old")])
+        .unwrap();
+    store
+        .put_hashes(&[((path.as_path(), stamp(2, 2), "FS25_A"), "new")])
+        .unwrap();
+    let query = |size, secs| {
+        store
+            .cached_hashes(&[(path.as_path(), stamp(size, secs), "FS25_A")])
+            .unwrap()
+            .remove(0)
+    };
+    assert_eq!(query(1, 1), None);
+    assert_eq!(query(2, 2).as_deref(), Some("new"));
+}
+
+#[test]
+fn cached_hashes_survive_reopening() {
+    let dir = tempfile::tempdir().unwrap();
+    let library = dir.path().join("library.sqlite");
+    let cache = dir.path().join("cache.sqlite");
+    let path = mod_path("C:\\mods", "FS25_A.zip");
+    let store = Store::open(&library, &cache).unwrap();
+    store
+        .put_hashes(&[((path.as_path(), stamp(1, 1), "FS25_A"), "abc")])
+        .unwrap();
+    drop(store);
+    let store = Store::open(&library, &cache).unwrap();
+    assert_eq!(
+        store
+            .cached_hashes(&[(path.as_path(), stamp(1, 1), "FS25_A")])
+            .unwrap(),
+        vec![Some("abc".to_string())]
+    );
+}
+
+// ---------------------------------------------------------------- M6: tags and notes
+
+fn tags(list: &[&str]) -> Vec<String> {
+    list.iter().map(|t| (*t).to_string()).collect()
+}
+
+#[test]
+fn tags_and_a_note_are_stored_per_name_key() {
+    let store = Store::open_in_memory().unwrap();
+    assert_eq!(store.mod_meta("fs25_a").unwrap(), ModMeta::default());
+    store
+        .set_mod_tags("fs25_a", &tags(&["Tractor", "Old"]))
+        .unwrap();
+    store.set_mod_note("fs25_a", Some("my note")).unwrap();
+    let meta = store.mod_meta("fs25_a").unwrap();
+    assert_eq!(meta.tags, tags(&["Tractor", "Old"]));
+    assert_eq!(meta.note.as_deref(), Some("my note"));
+    // Setting one half leaves the other.
+    store.set_mod_tags("fs25_a", &tags(&["New"])).unwrap();
+    let meta = store.mod_meta("fs25_a").unwrap();
+    assert_eq!(meta.tags, tags(&["New"]));
+    assert_eq!(meta.note.as_deref(), Some("my note"));
+    assert_eq!(store.all_mod_meta().unwrap().len(), 1);
+}
+
+#[test]
+fn the_row_goes_when_no_tag_and_no_note_remain() {
+    let store = Store::open_in_memory().unwrap();
+    store.set_mod_tags("fs25_a", &tags(&["x"])).unwrap();
+    store.set_mod_note("fs25_a", Some("n")).unwrap();
+    store.set_mod_tags("fs25_a", &[]).unwrap();
+    assert_eq!(store.all_mod_meta().unwrap().len(), 1, "the note keeps it");
+    store.set_mod_note("fs25_a", None).unwrap();
+    assert!(store.all_mod_meta().unwrap().is_empty());
+
+    // Clearing what was never set leaves no row either.
+    store.set_mod_tags("fs25_b", &[]).unwrap();
+    store.set_mod_note("fs25_b", None).unwrap();
+    assert!(store.all_mod_meta().unwrap().is_empty());
+}
+
+#[test]
+fn all_tags_are_distinct_case_insensitively_and_sorted() {
+    let store = Store::open_in_memory().unwrap();
+    store
+        .set_mod_tags("fs25_a", &tags(&["beta", "Alpha"]))
+        .unwrap();
+    store
+        .set_mod_tags("fs25_b", &tags(&["ALPHA", "gamma", "Beta"]))
+        .unwrap();
+    // The first spelling in mod-name order is kept.
+    assert_eq!(store.all_tags().unwrap(), tags(&["Alpha", "beta", "gamma"]));
+}
+
+#[test]
+fn metadata_survives_reopening() {
+    let dir = tempfile::tempdir().unwrap();
+    let library = dir.path().join("library.sqlite");
+    let cache = dir.path().join("cache.sqlite");
+    let store = Store::open(&library, &cache).unwrap();
+    store.set_mod_tags("fs25_a", &tags(&["x"])).unwrap();
+    store.set_mod_note("fs25_a", Some("n")).unwrap();
+    drop(store);
+    let store = Store::open(&library, &cache).unwrap();
+    let meta = store.all_mod_meta().unwrap();
+    assert_eq!(meta["fs25_a"].tags, tags(&["x"]));
+    assert_eq!(meta["fs25_a"].note.as_deref(), Some("n"));
 }
 
 #[test]

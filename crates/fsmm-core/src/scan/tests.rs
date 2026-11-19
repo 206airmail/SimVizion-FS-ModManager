@@ -950,3 +950,58 @@ fn scan_folder_fails_for_a_missing_folder() {
     let dir = tempfile::tempdir().unwrap();
     assert!(scan_folder(&dir.path().join("nope"), "p", &[], None).is_err());
 }
+
+// ---------------------------------------------------------------- content fingerprint (M6)
+
+#[test]
+fn two_copies_of_a_zip_have_the_same_fingerprint() {
+    let desc = xml("<version>1.0</version>");
+    let a = read_zip(desc.as_bytes(), &[("scripts/a.lua", b"print(1)")], &[]);
+    let b = read_zip(desc.as_bytes(), &[("scripts/a.lua", b"print(1)")], &[]);
+    assert!(!a.fingerprint.is_empty());
+    assert_eq!(a.fingerprint, b.fingerprint);
+}
+
+#[test]
+fn a_changed_entry_changes_the_fingerprint_even_at_the_same_size() {
+    let desc = xml("<version>1.0</version>");
+    let a = read_zip(desc.as_bytes(), &[("scripts/a.lua", b"print(1)")], &[]);
+    let b = read_zip(desc.as_bytes(), &[("scripts/a.lua", b"print(2)")], &[]);
+    let longer = read_zip(desc.as_bytes(), &[("scripts/a.lua", b"print(10)")], &[]);
+    let added = read_zip(
+        desc.as_bytes(),
+        &[("scripts/a.lua", b"print(1)"), ("b.txt", b"")],
+        &[],
+    );
+    for other in [&b, &longer, &added] {
+        assert_ne!(a.fingerprint, other.fingerprint);
+    }
+}
+
+#[test]
+fn an_unreadable_zip_has_no_fingerprint() {
+    let dir = tempfile::tempdir().unwrap();
+    fs::write(dir.path().join("FS25_Bad.zip"), b"not a zip").unwrap();
+    assert_eq!(read_named(dir.path(), "FS25_Bad.zip", &[]).fingerprint, "");
+}
+
+#[test]
+fn the_fingerprint_is_stable_across_a_rescan() {
+    let dir = tempfile::tempdir().unwrap();
+    let desc = xml("<version>1.0</version>");
+    write_zip(
+        &dir.path().join("FS25_A.zip"),
+        &[("modDesc.xml", desc.as_bytes()), ("x.txt", b"x")],
+        Method::Deflated,
+    );
+    write_folder(
+        &dir.path().join("FS25_B"),
+        &[("modDesc.xml", desc.as_bytes()), ("x.txt", b"x")],
+    );
+    let first = scan_folder(dir.path(), "p", &[], None).unwrap();
+    let second = scan_folder(dir.path(), "p", &[], None).unwrap();
+    let prints =
+        |s: &FolderScan| -> Vec<String> { s.mods.iter().map(|m| m.fingerprint.clone()).collect() };
+    assert_eq!(prints(&first), prints(&second));
+    assert!(prints(&first).iter().all(|p| !p.is_empty()));
+}
