@@ -10,6 +10,7 @@ import './features/library/tags.css';
 import './features/files/files.css';
 import './features/compare/compare.css';
 import './features/savegames/savegames.css';
+import './features/updates/updates.css';
 import './features/gallery/gallery.css';
 
 createRoot(document.getElementById('root')!).render(

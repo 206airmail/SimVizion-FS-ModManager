@@ -3,4 +3,4 @@
 /**
  * Why a command failed. The frontend words each code; `detail` carries data, not sentences.
  */
-export type ErrorCode = "profileNotFound" | "folderMissing" | "folderUnreadable" | "gameRunning" | "serverRunning" | "settingsMissing" | "settingsUnreadable" | "settingsChanged" | "writeFailed" | "writesDisabled" | "nothingToUndo" | "noBackup" | "recycleUnavailable" | "notEnoughSpace" | "busy" | "cancelled" | "targetChanged" | "cannotRemoveProfile" | "savegameMissing" | "savegameUnreadable" | "internal";
+export type ErrorCode = "profileNotFound" | "folderMissing" | "folderUnreadable" | "gameRunning" | "serverRunning" | "settingsMissing" | "settingsUnreadable" | "settingsChanged" | "writeFailed" | "writesDisabled" | "nothingToUndo" | "noBackup" | "recycleUnavailable" | "notEnoughSpace" | "busy" | "cancelled" | "targetChanged" | "cannotRemoveProfile" | "savegameMissing" | "savegameUnreadable" | "offline" | "rateLimited" | "updatesDisabled" | "verifyFailed" | "notInstallable" | "invalidLink" | "internal";

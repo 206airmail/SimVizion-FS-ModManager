@@ -52,6 +52,18 @@ export const strings = {
     cannotRemoveProfile: 'The active folder and the game default folder stay in the list.',
     savegameMissing: 'That savegame could not be found. It may have been deleted in the game.',
     savegameUnreadable: 'That savegame could not be read. The game may still be saving it.',
+    offline:
+      'The update service could not be reached. Check your internet connection and try again.',
+    rateLimited:
+      'The update service asked the app to wait a little. It will be asked again later; nothing was changed.',
+    updatesDisabled:
+      'Online update checks are switched off. Turn them on in Settings to check for updates.',
+    verifyFailed:
+      'The downloaded file was not what the update promised, so it was discarded. The installed mod was not changed.',
+    notInstallable:
+      'This update cannot be installed by the app. Open its page to download it yourself.',
+    invalidLink:
+      'That is not a web address the app can use. Paste a link that starts with https:// or http://.',
   } satisfies Record<ErrorCode, string>,
 
   actionFailed: {
@@ -65,7 +77,12 @@ export const strings = {
     copy: 'Could not copy the mods',
     move: 'Could not move the mods',
     remove: 'Could not remove the mods',
+    update: 'Could not update the mod',
     cancelOperation: 'Could not cancel the operation',
+    openLink: 'Could not open the page',
+    saveLink: 'Could not save the link',
+    setUpdates: 'Could not change the update setting',
+    checkUpdates: 'Could not check for updates',
     saveTags: 'Could not save the tags',
     saveNote: 'Could not save the note',
     loadComparison: 'Could not compare the folders',
@@ -237,8 +254,25 @@ export const strings = {
     by: (author: string) => `by ${author}`,
     unknownAuthor: 'Unknown author',
     updateTitle: (version: string) => `Version ${version} is available`,
-    updateText: (current: string, source: string) => `Installed: ${current}. Source: ${source}.`,
+    updateText: (current: string) => `Installed: ${current}.`,
     updateAction: 'Update',
+    updateHint: (version: string) => `Download version ${version} and install it`,
+    updateNotInstallable:
+      'The app cannot download this update itself. Get it from the mod’s page instead.',
+    updateNotInstallableNoPage: 'The app cannot download this update itself.',
+    multiUpdatesTitle: 'Updates',
+    multiUpdatesText: (installable: number, selected: number) =>
+      installable === selected
+        ? `${formatCount(installable)} of the selected mods can be updated here.`
+        : `${formatCount(installable)} of the ${formatCount(selected)} selected mods can be updated here. The others have no update, or one the app cannot download.`,
+    updateMany: (count: number) => `Update ${count}`,
+    updateManyHint: 'Update the selected mods that have an update, each in its own folder',
+    sourceTitle: 'Source',
+    sourceNone: 'Not linked to a page',
+    openPage: (kind: 'modHub' | 'gitHub' | 'manual', label: string) =>
+      kind === 'manual' ? `Open ${label}` : `Open on ${label}`,
+    linkSource: 'Link source…',
+    editLink: 'Edit link…',
     issues: 'Issues',
     description: 'Description',
     noDescription: 'This mod has no description.',
@@ -254,8 +288,6 @@ export const strings = {
     multiplayer: 'Multiplayer',
     yes: 'Supported',
     no: 'Not supported',
-    source: 'Source',
-    linkSource: 'Link source',
     alsoIn: 'Also in',
     onlyHere: 'Only in this profile',
     dependencies: 'Requires',
@@ -273,8 +305,8 @@ export const strings = {
 
   /** Copy, move and remove: the dialogs, the progress and result banners, and why they are blocked. */
   fileOps: {
-    blockedGame: 'Close Farming Simulator 25 to copy, move or remove mods.',
-    blockedServer: 'Stop the dedicated server to copy, move or remove mods.',
+    blockedGame: 'Close Farming Simulator 25 to copy, move, remove or update mods.',
+    blockedServer: 'Stop the dedicated server to copy, move, remove or update mods.',
     blockedRunning: 'Another file operation is running. Wait for it to finish, or cancel it.',
     cancel: 'Cancel',
 
@@ -343,10 +375,14 @@ export const strings = {
 
     progress: {
       label: 'File operation progress',
-      title: (kind: 'copy' | 'move' | 'remove', target: string | null) =>
+      title: (kind: 'copy' | 'move' | 'remove' | 'update', target: string | null) =>
         kind === 'remove'
           ? 'Removing mods to the Recycle Bin'
-          : `${kind === 'copy' ? 'Copying' : 'Moving'} mods${target === null ? '' : ` to ${target}`}`,
+          : kind === 'update'
+            ? target === null
+              ? 'Updating mods'
+              : `Updating ${target}`
+            : `${kind === 'copy' ? 'Copying' : 'Moving'} mods${target === null ? '' : ` to ${target}`}`,
       preparing: 'Preparing…',
       bytes: (done: string, total: string) => `${done} of ${total}`,
       items: (done: number, total: number) => `${formatCount(done)} of ${mods(total)}`,
@@ -359,15 +395,22 @@ export const strings = {
       copied: (count: number, target: string) => `Copied ${mods(count)} to ${target}`,
       moved: (count: number, target: string) => `Moved ${mods(count)} to ${target}`,
       removed: (count: number) => `Removed ${mods(count)}`,
+      /** One mod in several folders (`modName` given), or several mods each in one folder. */
+      updated: (count: number, modName: string | null) =>
+        modName === null
+          ? `Updated ${mods(count)}`
+          : `Updated ${modName} in ${formatCount(count)} ${plural(count, 'folder', 'folders')}`,
       nothing: {
         copy: 'Nothing was copied',
         move: 'Nothing was moved',
         remove: 'Nothing was removed',
+        update: 'Nothing was updated',
       },
       cancelled: 'Cancelled',
       skipped: (count: number) => `${formatCount(count)} skipped`,
-      failed: (count: number, kind: 'copy' | 'move' | 'remove') =>
-        `${formatCount(count)} could not be ${kind === 'copy' ? 'copied' : kind === 'move' ? 'moved' : 'removed'}`,
+      failed: (count: number, kind: 'copy' | 'move' | 'remove' | 'update', folders = false) =>
+        `${formatCount(count)}${folders ? ` ${plural(count, 'folder', 'folders')}` : ''} could not be ${kind === 'copy' ? 'copied' : kind === 'move' ? 'moved' : kind === 'update' ? 'updated' : 'removed'}`,
+      updatedNote: 'The previous versions are in the Windows Recycle Bin.',
       notDone: (count: number) => `${formatCount(count)} not done because it was cancelled`,
       allSkipped: 'Every mod was skipped.',
       recycleNote:
@@ -579,6 +622,88 @@ export const strings = {
     removeAction: 'Remove from list',
     removing: 'Removing…',
     cancel: 'Cancel',
+  },
+
+  /** Online updates: Settings, the first-run prompt, the status item and the dialogs. */
+  updates: {
+    settings: {
+      title: 'Settings',
+      onlineTitle: 'Online',
+      switchLabel: 'Check for mod updates online',
+      sent: 'When this is on, the app sends the file names of your mods to SiloAPI, a service by HLLMR Ventures, to find newer versions. For a zip whose name the service does not know, it also sends a fingerprint of the file (its SHA-256). Nothing else is sent, and nothing at all leaves your computer while this is off.',
+      downloads:
+        'Updates are downloaded from GitHub or ModHub only when you press Update. Your mod folders are never changed without your confirmation.',
+      lastCheck: 'Last check',
+      neverChecked: 'Not yet',
+      retryAfter: 'Next check allowed',
+      result: 'Result',
+      resultText: (checked: number, byName: number, byHash: number, updates: number) =>
+        `${mods(checked)} checked: ${formatCount(byName)} found by name, ${formatCount(byHash)} by file fingerprint, ${formatCount(updates)} ${plural(updates, 'has an update', 'have updates')}.`,
+      fromCache: 'Nothing was sent: these are the results of the last check.',
+      checkNow: 'Check now',
+      checking: 'Checking…',
+      off: 'Switched off. Nothing is sent and no updates are shown.',
+      failedTitle: 'The update check did not finish',
+      pausedText: (time: string) =>
+        `The update service asked the app to wait. It will be asked again after ${time}.`,
+    },
+    prompt: {
+      title: 'Find out which mods have updates?',
+      text: 'This sends your mod file names (and a fingerprint of any zip the service does not know) to SiloAPI. Nothing is sent while it is off.',
+      turnOn: 'Turn on',
+      notNow: 'Not now',
+    },
+    status: {
+      label: 'Update checks',
+      hint: 'Open the update settings',
+      off: 'Updates: Off',
+      checking: 'Updates: checking…',
+      notChecked: 'Updates: not checked yet',
+      checked: (time: string) => `Updates: checked ${time}`,
+      offline: 'Updates: Offline',
+      paused: (time: string) => `Updates: paused until ${time}`,
+    },
+    dialog: {
+      title: (modTitle: string) => `Update ${modTitle}`,
+      planning: 'Working out what the update needs…',
+      /** The plan's source is GitHub or ModHub; any other kind is worded as the page it is. */
+      from: (source: 'modHub' | 'gitHub' | 'manual') =>
+        source === 'gitHub' ? 'from GitHub' : source === 'modHub' ? 'from ModHub' : 'from its page',
+      foldersLabel: 'Update in these folders',
+      folderVersion: (version: string) => `Version ${version}`,
+      current: 'Up to date',
+      active: 'Active',
+      note: 'The new file is downloaded and checked before anything is replaced. The old version goes to the Windows Recycle Bin, where you can restore it.',
+      none: 'Tick at least one folder.',
+      confirm: (count: number) =>
+        count <= 1 ? 'Update' : `Update in ${formatCount(count)} folders`,
+      cancel: 'Cancel',
+      failedTitle: 'This update cannot be installed by the app',
+      hint: (version: string) => `Download version ${version} and install it`,
+    },
+    many: {
+      title: (count: number) => `Update ${mods(count)}?`,
+      lead: 'Each mod is updated in the folder you are looking at. Copies in other folders stay as they are; open a mod on its own to update those too.',
+      to: (from: string, to: string) => `${from} → ${to}`,
+      more: (count: number) => `and ${formatCount(count)} more`,
+      note: 'Each download is checked before it replaces anything. The old versions go to the Windows Recycle Bin.',
+      confirm: (count: number) => `Update ${mods(count)}`,
+    },
+    link: {
+      title: 'Link a source',
+      editTitle: 'Edit the source link',
+      lead: 'Paste the address of the mod’s page, for example on KingMods or itch.io. The app keeps it so you can open the page from here. It does not check that page for updates.',
+      label: 'Page address',
+      placeholder: 'https://',
+      host: (host: string) => `Opens a page on ${host}`,
+      current: (host: string) => `Currently linked to ${host}. Saving replaces it.`,
+      invalid: 'Starts with https:// or http://',
+      save: 'Save link',
+      saving: 'Saving…',
+      remove: 'Remove link',
+      removing: 'Removing…',
+      cancel: 'Cancel',
+    },
   },
 
   status: {

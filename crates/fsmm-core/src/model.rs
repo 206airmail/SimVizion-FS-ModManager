@@ -90,15 +90,46 @@ pub struct ModIssue {
     pub detail: Option<String>,
 }
 
-/// Where a mod came from. Stored as user metadata keyed by mod name.
+/// Where a mod comes from, for the Source column: the update catalog's match first (plan M7),
+/// else the user's manual link. `ModEntry::links` lists every page the mod can be opened on.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(tag = "type", rename_all = "camelCase")]
 #[ts(export)]
 pub enum ModSource {
     Unknown,
-    ModHub { id: String },
-    GitHub { owner: String, repo: String },
+    ModHub {
+        id: String,
+    },
+    GitHub {
+        owner: String,
+        repo: String,
+    },
+    /// A page the user linked by hand (KingMods, itch.io, a forum post): its host.
+    Manual {
+        host: String,
+    },
+}
+
+/// Which page a mod link opens.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub enum LinkKind {
+    ModHub,
+    GitHub,
+    /// The user's own link.
     Manual,
+}
+
+/// A page a mod can be opened on. The URL stays in the core: the frontend asks to open a link
+/// by mod name and kind (`openModLink`), so no URL ever crosses the bridge.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct SourceLink {
+    pub kind: LinkKind,
+    /// What the button names: "ModHub", "GitHub" or the manual link's host.
+    pub label: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -107,7 +138,12 @@ pub enum ModSource {
 pub enum UpdateState {
     Unknown,
     UpToDate,
-    Available { version: String },
+    /// The catalog has a newer version. `installable` when the app can download it itself
+    /// (GitHub release or ModHub download link); otherwise only its page can be opened.
+    Available {
+        version: String,
+        installable: bool,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
@@ -144,6 +180,9 @@ pub struct ModEntry {
     pub tags: Vec<String>,
     /// The user's note for this mod name (shared by every profile).
     pub note: Option<String>,
+    /// Pages the mod can be opened on: the catalog's ModHub and GitHub pages, and the user's
+    /// manual link.
+    pub links: Vec<SourceLink>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -232,6 +271,20 @@ pub enum ErrorCode {
     SavegameMissing,
     /// The savegame's `careerSavegame.xml` exists but could not be read.
     SavegameUnreadable,
+    /// The update catalog or download site could not be reached.
+    Offline,
+    /// The update catalog asked the app to wait; `detail` holds when it may ask again (ISO time).
+    RateLimited,
+    /// Online update checks are switched off in Settings.
+    UpdatesDisabled,
+    /// A downloaded update did not match what the catalog or page promised (hash, version, or
+    /// not a mod zip); nothing was replaced.
+    VerifyFailed,
+    /// This update cannot be installed by the app (no direct download, or a file with another
+    /// name); its page can still be opened.
+    NotInstallable,
+    /// A manual source link is not an http(s) address the app accepts.
+    InvalidLink,
     /// Anything unexpected; `detail` holds a technical message for a bug report.
     Internal,
 }
@@ -337,6 +390,58 @@ pub struct OpResult {
     pub done: Vec<String>,
     pub skipped: Vec<String>,
     pub failed: Vec<ItemFailure>,
+}
+
+/// The user's online-update settings (plan M7). Off by default: nothing goes online until enabled.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct UpdateSettings {
+    pub enabled: bool,
+    /// ISO time of the last successful check.
+    pub last_check: Option<String>,
+    /// ISO time before which the catalog asked not to be contacted again.
+    pub retry_after: Option<String>,
+}
+
+/// The outcome of an update check.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct UpdateCheck {
+    /// ISO time the results were fetched.
+    pub checked_at: String,
+    /// Distinct mod names looked up.
+    pub checked: u32,
+    pub matched_by_name: u32,
+    pub matched_by_hash: u32,
+    /// Distinct mod names with a newer version.
+    pub updates: u32,
+    /// The results came from the cache; nothing was sent.
+    pub from_cache: bool,
+}
+
+/// One folder that holds the mod an update is planned for.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct UpdateFolder {
+    pub profile_id: String,
+    pub mod_id: String,
+    pub version: String,
+}
+
+/// What installing an update would do, before anything is downloaded.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct UpdatePlan {
+    pub mod_name: String,
+    pub to_version: String,
+    /// Where the file will come from: `gitHub` or `modHub`.
+    pub source: LinkKind,
+    /// Every folder holding a mod with this name, in profile order.
+    pub folders: Vec<UpdateFolder>,
 }
 
 /// How the mods with one name compare between two profiles.
@@ -530,9 +635,13 @@ mod tests {
     fn update_state_uses_a_type_tag() {
         let json = serde_json::to_string(&UpdateState::Available {
             version: "1.2.0.0".into(),
+            installable: true,
         })
         .unwrap();
-        assert_eq!(json, r#"{"type":"available","version":"1.2.0.0"}"#);
+        assert_eq!(
+            json,
+            r#"{"type":"available","version":"1.2.0.0","installable":true}"#
+        );
     }
 
     #[test]

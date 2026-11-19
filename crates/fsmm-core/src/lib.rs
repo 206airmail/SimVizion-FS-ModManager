@@ -10,6 +10,7 @@ pub mod files;
 pub mod icons;
 pub mod library;
 pub mod model;
+pub mod net;
 pub mod ops;
 pub mod savegame;
 pub mod scan;

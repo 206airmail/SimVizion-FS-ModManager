@@ -2,7 +2,6 @@ import {
   Boxes,
   CircleCheck,
   FolderOpen,
-  Link2,
   MousePointerClick,
   PanelRightClose,
   TriangleAlert,
@@ -14,14 +13,18 @@ import { formatBytes, formatDate } from '../../lib/format';
 import { useActionError } from '../../lib/useActionError';
 import { strings } from '../../strings';
 import { ActionErrorBanner } from '../ActionErrorBanner';
-import { Button, IconButton } from '../../ui/Button';
+import { IconButton } from '../../ui/Button';
 import { cx } from '../../ui/cx';
-import { Banner, EmptyState } from '../../ui/Feedback';
+import { EmptyState } from '../../ui/Feedback';
 import { Icon } from '../../ui/Icon';
 import { Pill } from '../../ui/Pill';
 import { FileActions } from '../files/FileActions';
 import type { FileOpsController } from '../files/useFileOps';
-import { describeSource, kindIcons, severityIcons } from './labels';
+import { SourceSection } from '../updates/SourceSection';
+import { UpdateBanner } from '../updates/UpdateBanner';
+import { installableUpdates } from '../updates/choices';
+import { UpdateSelection } from '../updates/UpdateSelection';
+import { kindIcons, severityIcons } from './labels';
 import { ModIcon } from './ModIcon';
 import { NoteField } from './NoteField';
 import { TagEditor } from './TagEditor';
@@ -39,6 +42,8 @@ export interface InspectorProps {
   /** Shown as a drawer over the list instead of beside it. */
   overlay: boolean;
   onClose: () => void;
+  /** A source link was saved or removed: read the list again. */
+  onLinksChanged: () => void;
 }
 
 const t = strings.inspector;
@@ -54,6 +59,7 @@ export function Inspector({
   meta,
   overlay,
   onClose,
+  onLinksChanged,
 }: InspectorProps) {
   const only = mods.length === 1 ? mods[0] : undefined;
   return (
@@ -67,7 +73,14 @@ export function Inspector({
       </div>
 
       {only ? (
-        <ModDetails mod={only} profiles={profiles} game={game} fileOps={fileOps} meta={meta} />
+        <ModDetails
+          mod={only}
+          profiles={profiles}
+          game={game}
+          fileOps={fileOps}
+          meta={meta}
+          onLinksChanged={onLinksChanged}
+        />
       ) : mods.length > 1 ? (
         <>
           <div className="mm-inspector__scroll">
@@ -79,6 +92,11 @@ export function Inspector({
               )}
             />
             <div className="mm-inspector__sections">
+              {installableUpdates(mods).length > 0 && (
+                <Section title={t.multiUpdatesTitle}>
+                  <UpdateSelection mods={mods} profiles={profiles} game={game} fileOps={fileOps} />
+                </Section>
+              )}
               <Section title={t.multiTagsTitle}>
                 <TagsSection mods={mods} meta={meta} />
               </Section>
@@ -101,16 +119,17 @@ function ModDetails({
   game,
   fileOps,
   meta,
+  onLinksChanged,
 }: {
   mod: ModEntry;
   profiles: readonly Profile[];
   game: GameStatus | null;
   fileOps: FileOpsController;
   meta: ModMetaController;
+  onLinksChanged: () => void;
 }) {
   const showInFolder = useActionError(`${mod.profileId}/${mod.id}`);
   const otherProfiles = profiles.filter((profile) => mod.alsoIn.includes(profile.id));
-  const sourceText = describeSource(mod.source);
 
   return (
     <>
@@ -130,15 +149,7 @@ function ModDetails({
         </div>
 
         <div className="mm-inspector__sections">
-          {mod.update.type === 'available' && (
-            <Banner
-              tone="info"
-              title={t.updateTitle(mod.update.version)}
-              actions={<Button size="compact">{t.updateAction}</Button>}
-            >
-              {t.updateText(mod.version, sourceText)}
-            </Banner>
-          )}
+          <UpdateBanner mod={mod} profiles={profiles} game={game} fileOps={fileOps} />
 
           {mod.issues.length > 0 && (
             <Section title={t.issues}>
@@ -166,6 +177,10 @@ function ModDetails({
               </ul>
             </Section>
           )}
+
+          <Section title={t.sourceTitle}>
+            <SourceSection mod={mod} onChanged={onLinksChanged} />
+          </Section>
 
           <Section title={strings.tags.title}>
             <TagsSection mods={[mod]} meta={meta} />
@@ -204,17 +219,6 @@ function ModDetails({
                 )}
               </Property>
               <Property label={t.multiplayer}>{mod.multiplayer ? t.yes : t.no}</Property>
-              <Property label={t.source}>
-                <span className={cx(mod.source.type === 'unknown' && 'mm-props__quiet')}>
-                  {sourceText}
-                </span>
-                {mod.source.type === 'unknown' && (
-                  <button type="button" className="sv-link-button">
-                    <Icon icon={Link2} size={16} />
-                    {t.linkSource}
-                  </button>
-                )}
-              </Property>
               <Property label={t.alsoIn}>
                 {otherProfiles.length > 0 ? (
                   otherProfiles.map((profile) => (

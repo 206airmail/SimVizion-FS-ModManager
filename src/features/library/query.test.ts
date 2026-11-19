@@ -39,6 +39,7 @@ function makeMod(overrides: Partial<ModEntry> = {}): ModEntry {
     alsoIn: [],
     tags: [],
     note: null,
+    links: [],
     ...overrides,
   };
 }
@@ -125,14 +126,14 @@ describe('queryMods filters', () => {
       id: 'p1',
       kind: 'placeable',
       title: 'P1',
-      update: { type: 'available', version: '2.0.0.0' },
+      update: { type: 'available', version: '2.0.0.0', installable: true },
     }),
     makeMod({
       id: 's1',
       kind: 'script',
       title: 'S1',
       issues: [{ kind: 'descVersionMismatch', severity: 'info', detail: null }],
-      update: { type: 'available', version: '1.1.0.0' },
+      update: { type: 'available', version: '1.1.0.0', installable: true },
     }),
     makeMod({ id: 'm1', kind: 'map', title: 'M1', update: { type: 'upToDate' } }),
     makeMod({ id: 'o1', kind: 'other', title: 'O1' }),
@@ -191,7 +192,9 @@ describe('queryMods sorting', () => {
       ? { type, id: '1' }
       : type === 'gitHub'
         ? { type, owner: 'o', repo: 'r' }
-        : { type };
+        : type === 'manual'
+          ? { type, host: 'example.com' }
+          : { type };
   const a = makeMod({
     id: 'a',
     title: 'Delta Plow',
@@ -353,8 +356,8 @@ describe('mock dataset', () => {
     'descVersionMismatch',
     'missingDependency',
   ];
-  const api: Api = createMockApi({ delayMs: 0 });
-  const stressApi: Api = createMockApi({ delayMs: 0, stress: true });
+  const api: Api = createMockApi({ delayMs: 0, updatesOn: true });
+  const stressApi: Api = createMockApi({ delayMs: 0, stress: true, updatesOn: true });
   let profiles: Profile[] = [];
   let mods: Record<string, ModEntry[]> = {};
   let stressProfiles: Profile[] = [];
@@ -443,7 +446,7 @@ describe('mock dataset', () => {
   });
 
   it('is deterministic', async () => {
-    const other = createMockApi({ delayMs: 0 });
+    const other = createMockApi({ delayMs: 0, updatesOn: true });
     expect(await other.listProfiles()).toEqual(profiles);
     for (const profile of profiles) {
       expect(await other.listMods(profile.id)).toEqual(mods[profile.id]);

@@ -1,59 +1,70 @@
 # Status
 
-Updated: 2026-11-19, branch `m6-compare-savegames-tags`
+Updated: 2026-11-19, branch `m7-mod-updates`
 
 ## Active work
 
-Milestone 6 (Compare mode, savegame comparison, tags and notes) is built and waiting for the user's review as a pull request. Plan: `docs/dev/plans/2026-11-19-m6-compare-savegames-tags.md`. M1–M5 are merged to `main` (PRs #1–#5).
+Milestone 7 (mod updates) is built and waiting for the user's review as a pull request. Plan: `docs/dev/plans/2026-11-19-m7-mod-updates.md`. M1–M6 are merged to `main` (PRs #1–#6).
 
-- **`fsmm-core::savegame`:** reads `savegameN/careerSavegame.xml` only (revision 2, `valid="true"`, slot ids validated). Nothing in a save is written, and no other save file is opened.
-- **`fsmm-core::files::hash`:** the game's `fileHash`, `md5(zip ++ modName)`. Hashes run in parallel and are cached in `cache.sqlite` (`file_hashes`, keyed by path, size, mtime and salt).
-- **Content fingerprint:** a hash of each zip's central directory (name, CRC-32, size), or of a folder's file list, stored with the scan record (`SCAN_VERSION` 2). Compare uses it to spot the same version with different contents.
-- **`fsmm-core::library`:**
-  - `compare_profiles`.
-  - `list_savegames`, `savegame_report`, `check_savegame_files` and `cancel_hashing`, with their own busy and cancel flags.
-  - `set_tags`, `set_note` and `list_tags`, keyed by lower-cased mod name in `library.sqlite` `mod_meta` (migration 4). `ModEntry` carries `tags` and `note`.
-- **`src-tauri`:** eight commands in `insight.rs`. Debug builds print timings for compare, the report and the file check.
+- **`fsmm-core::net`** (new; the only network code in the app):
+  - **Interfaces:** the `Catalog` (SiloAPI: lookup, by-hash, detail) and `Web` (ModHub page, download) traits, with fakes for tests.
+  - **`Http`:** one `ureq` agent with timeouts, no proxy, `https` only, a host allow-list checked on every redirect hop, capped bodies, no retries.
+  - **Also:** the strict ModHub download-link parser and the version comparison.
+  - **Debug builds** print `[net] METHOD host/path -> status`, never bodies or queries.
+- **`fsmm-core::library::updates`:**
+  - `check_updates`: names, then fingerprints for zips no name explains. It refuses while updates are off, uses a 3-hour cache, debounces Check now to 60 s, and stores 429s as `retry_after`.
+  - The overlay on `list_mods` and `list_profiles`: `source`, `links`, `update` and `updateCount`.
+  - `plan_update`, and `install_update`, which goes through `files::install_download` and the M5 path.
+  - `link_url` and `set_source_link`.
+- **Store:**
+  - `library.sqlite` migration 5: `mod_meta.source_url` and `app_settings`.
+  - `cache.sqlite` migration 4: `catalog_matches` and the `file_sha256` cache.
+- **`src-tauri`:** seven commands in `updates.rs`. `open_mod_link` resolves the URL in the core.
 - **Frontend:**
-  - A Compare screen: two folder pickers, swap, filter segments with counts, a merged table, multi-select, and Copy or Move in either direction.
-  - A Savegames screen: the save list, the report with state filters, a missing-required-map banner, "Copy N from <folder>", the "not in any of your folders" list, extras, and the automatic file check with progress and Cancel.
-  - Tags and notes in the Inspector (one mod or several), and a tag filter.
-  - `TransferDialog` presets.
-  - Entry points: Tools, the profile menu, and the library title row.
-  - Mock switches `?mock=slowHash|brokenSave|noSaves`.
+  - The Settings screen with an Online section, the first-run prompt and the status-bar item.
+  - Inspector: the update banner and a Source section with page buttons and "Link source…".
+  - The Update dialog, which ticks only the folder on screen, and "Update N" for a selection.
+  - `Checkbox` and `Switch` primitives, and mock switches `?mock=updatesOn|offline|rateLimited|hashMismatch|noModHubLink`.
 
 ## Next step
 
-The user reviews the M6 pull request. After the merge, plan Milestone 7 (mod updates; source: SiloAPI, rate-limited, see the user memory note).
+The user reviews the M7 pull request. After the merge, plan Milestone 8 (the release).
 
 ## Last verification
 
-2026-11-19, M6 integration:
+2026-11-19, M7 integration:
 
 - **Automated checks:**
   - `cargo fmt --all --check` and `cargo clippy --workspace --all-targets -- -D warnings`: clean.
-  - `cargo test --workspace`: 467 + 1 passed, 3 ignored.
-  - `npm run check`: 262 tests passed.
+  - `cargo test --workspace`: 622 + 1 passed, 3 ignored.
+  - `npm run check`: 331 tests passed.
   - `npm run gen:types`: no diff.
-- **Real app, read-only against game files.** Expected numbers came from an independent PowerShell script: it read each zip's `modDesc.xml` and computed `md5(zip + modName)` for every same-version zip.
-  - `savegame1` (477 mods, 1 required) against `mods`. The app matched the script exactly: 227 missing, 61 different version, 3 different file (`FS25_TankerUniversalFill`, `RMC25_TrailKing_TK70`, `FS25_ClaasXerion2500`), 182 present plus 4 installed DLCs.
-  - Against `$testingMods`: 463 missing, 1 different version, 9 present plus 4 DLCs.
-  - The required map mod `Feliz` is in none of the user's folders, and the app says so.
-  - **Hash timing:** the cold file check against `mods` took 1.06 s for about 3.7 GB, with 185 zips hashed in parallel and the app's hash cache empty. Windows' file cache was probably warm from the script. With a warm hash cache the whole report takes 58 ms and nothing is hashed.
-  - **Compare** `$testingMods` vs `mods`: 7 only left and 586 only right, matching the script's 585 plus one mod whose `modDesc` the script could not read. 4 different (2 by version, 2 same version with a different size) and 2 identical. It took 82 ms.
-  - **Tags and notes:** a tag and a note on a mod survived an app restart and a rescan, and the tag showed on both copies of that mod name. Both were removed afterwards.
-  - **"Copy 4 from $testingMods":** opened the preset dialog with the plan ("Copy 4 mods to mods", 191 MB). It was cancelled, so nothing was written.
+- **Real app: the update check.** The user's library was checked against the real SiloAPI.
+  - **Requests:** the first check made 6, one at a time, all 200: 2 lookups, 3 by-hash and 1 lookup for the hash-matched names. It took 21 s, mostly the first SHA-256 pass over 240 unmatched zips.
+  - **Matches:** of 599 distinct names, 356 matched by name and 1 by fingerprint (a Syncthing `sync-conflict` copy of RealisticLivestock); 242 are unmatched. 20 matches have a GitHub release; the rest install through ModHub pages.
+  - **Updates shown:** 52 in `mods`, 2 in `$offlineTestingMods` and 2 in `$testingMods`.
+  - **Spot checks:** EnhancedVehicle 1.1.7.1 and ContractBoost 1.1.2.8 match their latest GitHub releases. Easy Development Controls 1.2.0.0 matches its ModHub page.
+  - **Restarts:** after two app restarts, the startup check answered from the cache (10–12 ms) and sent nothing.
+- **Real app: installs into two scratch folders**, with `FSMM_ALLOW_GAME_WRITES=1` for this approved test only.
+  - **GitHub:** `FS25_Courseplay` went from a generated 7.0.0.0 placeholder to v8.1.0.3 in both folders at once. That took 3 requests: the catalog detail, then github.com's 302 to `release-assets.githubusercontent.com`. Both files' SHA-256 equals GitHub's published `.sha256`.
+  - **ModHub:** `FS25_EasyDevControls` went from a 1.0.0.0 placeholder to 1.2.0.0 through its mod page and `cdn25.giants-software.com`. The file is 459,860 bytes, as the CDN reported.
+  - **Recycle Bin and journal:** each placeholder went to the Recycle Bin, and the journal shows `recycle` then `update` rows, all `ok`. The scratch profiles were removed from the list and the scratch folders recycled.
 - **Snapshot:** the real mod folders (2,748 files: name, size, mtime), the `gameSettings.xml` hash and the `savegame1/careerSavegame.xml` hash are identical before and after.
 
 ## Known issues
 
-- **Savegame report sorting:** the report and Compare sort by mod (file) name, as the contract specifies, but show titles, so the title column looks unsorted.
-- **960×640 Savegames layout:** the save list, banners and copy block leave little room for the table; the list is capped at 3.5 rows. The tag filter makes the library toolbar wrap to a third row at 960px.
-- **Hash cache:** rows for deleted mods are never pruned. They are tiny.
-- **`listSavegames`** cannot tell "no user folder" from "no saves"; both show the same empty state.
-- **Not exercised in the real window:** executing a copy from Compare or Savegames (the M5 copy path is unchanged; only the preset dialog is new), cancelling a real hash run, multi-select tagging.
+- **Unmatched mods:** 242 of 599 names are not in SiloAPI. The user can link those by hand.
+- **Not exercised in the real window:**
+  - adding, editing or removing a manual link (each link is stored per mod name, so a test would touch the user's real mods' metadata);
+  - the "Open on …" buttons, which would open the user's browser;
+  - Cancel during a real download;
+  - a real 429 or offline state (all covered by fakes and the mock).
+- **Courseplay's latest GitHub release** is tagged `v8.1.0.3-cc.7`, while SiloAPI reports `v8.1.0.3`. The app follows the catalog.
 - **From earlier milestones:**
-  - The `fsmm-test-a` scratch profile from M5 may still be listed until the user removes it.
+  - Savegame report sorting is by file name while titles are shown.
+  - At 960×640 the Savegames layout is tight.
+  - Hash-cache rows for deleted mods are never pruned.
+  - `listSavegames` cannot tell "no user folder" from "no saves".
   - GIANTS and Epic detection is fixture-only.
   - The descVersion rule is unconfirmed.
   - The emblem is a placeholder.

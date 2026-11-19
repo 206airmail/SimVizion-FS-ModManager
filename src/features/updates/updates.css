@@ -1,0 +1,241 @@
+/* Online updates: Settings, the Update dialog, page buttons and the status item. Colours come
+   only from tokens.css. */
+
+/* ---------- Settings ---------- */
+.mm-settings {
+  flex: 1;
+}
+.mm-settings__scroll {
+  flex: 1;
+  min-height: 0;
+  padding: 16px;
+  overflow: auto;
+}
+.mm-settings__section {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+  max-width: 640px;
+}
+.mm-settings__section > .sv-banner {
+  align-self: stretch;
+}
+.mm-settings__heading {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+}
+.mm-settings__text {
+  color: var(--sv-text-readable-secondary);
+}
+.mm-settings__quiet {
+  color: var(--sv-text-secondary);
+}
+.mm-settings__state {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  align-self: stretch;
+  gap: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--sv-border);
+}
+.mm-settings__facts {
+  display: flex;
+  flex-direction: column;
+  align-self: stretch;
+  margin: 0;
+}
+.mm-settings__fact {
+  display: grid;
+  grid-template-columns: 160px minmax(0, 1fr);
+  gap: 12px;
+  padding: 6px 0;
+}
+.mm-settings__fact + .mm-settings__fact {
+  border-top: 1px solid var(--sv-border);
+}
+.mm-settings__fact dt {
+  color: var(--sv-text-secondary);
+}
+.mm-settings__fact dd {
+  margin: 0;
+  color: var(--sv-text);
+}
+@media (max-width: 1040px) {
+  .mm-settings__fact {
+    grid-template-columns: 1fr;
+    gap: 2px;
+  }
+}
+
+/* ---------- Status bar item ---------- */
+.mm-statusbar__button {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  height: 20px;
+  margin: 0 -6px;
+  padding: 0 6px;
+  border: 1px solid transparent;
+  border-radius: var(--sv-radius-control);
+  background: none;
+  color: inherit;
+  font-size: inherit;
+  cursor: pointer;
+}
+.mm-statusbar__button:hover {
+  background: var(--sv-hover-bg);
+}
+.mm-statusbar__button:focus-visible {
+  outline: none;
+  border-color: var(--sv-teal);
+}
+
+/* ---------- Page buttons and the Inspector's Source section ---------- */
+.mm-pagelinks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+  margin-top: 6px;
+}
+.mm-pagelinks > .sv-button {
+  max-width: 100%;
+}
+.mm-source__text {
+  color: var(--sv-text);
+  overflow-wrap: anywhere;
+}
+.mm-source__text--quiet {
+  color: var(--sv-text-muted);
+}
+.mm-source__edit {
+  margin-top: 8px;
+}
+.mm-update__reason {
+  display: block;
+}
+
+.mm-update-selection {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+.mm-update-selection__text {
+  color: var(--sv-text-readable-secondary);
+}
+
+/* ---------- Update dialog ---------- */
+.mm-update__planning {
+  color: var(--sv-text-secondary);
+}
+.mm-update__versions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 8px;
+  color: var(--sv-text);
+}
+.mm-update__version {
+  color: var(--sv-text-readable-secondary);
+  font-size: 14px;
+}
+.mm-update__version--new {
+  color: var(--sv-text);
+  font-weight: 600;
+}
+.mm-update__arrow {
+  color: var(--sv-text-muted);
+}
+.mm-update__from {
+  color: var(--sv-text-secondary);
+}
+.mm-update__folders {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.mm-update__folders > legend {
+  margin-bottom: 6px;
+  padding: 0;
+}
+.mm-update__folder {
+  display: flex;
+  align-self: stretch;
+  padding: 2px 8px;
+  border: 1px solid var(--sv-border);
+  border-radius: var(--sv-radius-control);
+  background: var(--sv-recessed);
+  color: var(--sv-text);
+}
+.mm-update__folder + .mm-update__folder {
+  margin-top: 4px;
+}
+.mm-update__folder .sv-checkbox__label {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 8px;
+}
+.mm-update__folder-name {
+  flex: 0 1 auto;
+}
+.mm-update__folder-version {
+  margin-left: auto;
+  color: var(--sv-text-secondary);
+  white-space: nowrap;
+}
+.mm-update__note {
+  color: var(--sv-text-secondary);
+  font-size: 12px;
+}
+.mm-update__list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--sv-border);
+  border-radius: var(--sv-radius-control);
+  background: var(--sv-recessed);
+  list-style: none;
+  color: var(--sv-text);
+}
+.mm-update__item {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+}
+.mm-update__item-versions {
+  flex: none;
+  color: var(--sv-text-secondary);
+}
+
+/* ---------- Link dialog ---------- */
+.mm-dialog-gap {
+  flex: 1;
+}
+.mm-link__lead {
+  color: var(--sv-text-readable-secondary);
+}
+.mm-link__host {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  color: var(--sv-text-readable-secondary);
+}
+.mm-link__host > svg {
+  flex: none;
+  color: var(--sv-teal);
+}

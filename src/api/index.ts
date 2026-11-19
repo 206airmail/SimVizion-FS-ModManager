@@ -8,6 +8,7 @@ import type { ScanProgress } from './types/ScanProgress';
 import type { ClashChoice } from './types/ClashChoice';
 import type { Comparison } from './types/Comparison';
 import type { HashProgress } from './types/HashProgress';
+import type { LinkKind } from './types/LinkKind';
 import type { Savegame } from './types/Savegame';
 import type { SavegameReport } from './types/SavegameReport';
 import type { OpProgress } from './types/OpProgress';
@@ -15,6 +16,9 @@ import type { OpResult } from './types/OpResult';
 import type { SwitchResult } from './types/SwitchResult';
 import type { TransferMode } from './types/TransferMode';
 import type { TransferPlan } from './types/TransferPlan';
+import type { UpdateCheck } from './types/UpdateCheck';
+import type { UpdatePlan } from './types/UpdatePlan';
+import type { UpdateSettings } from './types/UpdateSettings';
 
 export type { ApiError } from './types/ApiError';
 export type { ClashChoice } from './types/ClashChoice';
@@ -28,6 +32,7 @@ export type { GameStatus } from './types/GameStatus';
 export type { HashProgress } from './types/HashProgress';
 export type { ItemFailure } from './types/ItemFailure';
 export type { IssueKind } from './types/IssueKind';
+export type { LinkKind } from './types/LinkKind';
 export type { ModEntry } from './types/ModEntry';
 export type { ModFormat } from './types/ModFormat';
 export type { ModIssue } from './types/ModIssue';
@@ -44,11 +49,16 @@ export type { SaveModRow } from './types/SaveModRow';
 export type { SaveModState } from './types/SaveModState';
 export type { ScanSummary } from './types/ScanSummary';
 export type { Severity } from './types/Severity';
+export type { SourceLink } from './types/SourceLink';
 export type { SwitchResult } from './types/SwitchResult';
 export type { TransferClash } from './types/TransferClash';
 export type { TransferItem } from './types/TransferItem';
 export type { TransferMode } from './types/TransferMode';
 export type { TransferPlan } from './types/TransferPlan';
+export type { UpdateCheck } from './types/UpdateCheck';
+export type { UpdateFolder } from './types/UpdateFolder';
+export type { UpdatePlan } from './types/UpdatePlan';
+export type { UpdateSettings } from './types/UpdateSettings';
 export type { UpdateState } from './types/UpdateState';
 
 /**
@@ -128,4 +138,25 @@ export interface Api {
   setNote(modName: string, note: string): Promise<void>;
   /** Every tag in use, sorted. */
   listTags(): Promise<string[]>;
+  /** The online-update settings; off by default, and nothing goes online while off. */
+  getUpdateSettings(): Promise<UpdateSettings>;
+  setUpdatesEnabled(enabled: boolean): Promise<UpdateSettings>;
+  /**
+   * Checks every folder's mods against the update catalog. Without `force`, results less than
+   * 3 hours old come from the cache; with it, less than 60 s. Rejects with `updatesDisabled`,
+   * `offline` or `rateLimited` (detail: ISO time to try again).
+   */
+  checkForUpdates(force: boolean): Promise<UpdateCheck>;
+  /** Which folders hold the mod and where its update comes from; no network. */
+  planUpdate(modName: string): Promise<UpdatePlan>;
+  /** Downloads, verifies and installs the update into the given folders (old versions recycled). */
+  installUpdate(
+    modName: string,
+    profileIds: string[],
+    onProgress?: (progress: OpProgress) => void,
+  ): Promise<OpResult>;
+  /** Opens one of the mod's pages (see `ModEntry.links`) in the browser. */
+  openModLink(modName: string, kind: LinkKind): Promise<void>;
+  /** Sets (or clears with null) the user's source link; returns its host. */
+  setSourceLink(modName: string, url: string | null): Promise<string | null>;
 }

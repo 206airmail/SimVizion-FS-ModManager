@@ -6,3 +6,6 @@ src-tauri/gen
 src-tauri/icons
 src/api/types
 docs/dev/plans
+
+# Verbatim snippets of real web pages, used as parser fixtures; never reformat them.
+crates/fsmm-core/src/net/fixtures/

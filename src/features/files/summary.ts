@@ -1,16 +1,20 @@
-// What a finished copy, move or remove says, worded from the Api's `OpResult`.
+// What a finished copy, move, remove or update says, worded from the Api's `OpResult`.
 
 import type { OpResult } from '../../api';
 import { isErrorCode } from '../../lib/errors';
 import { strings } from '../../strings';
 
-export type OpKind = 'copy' | 'move' | 'remove';
+export type OpKind = 'copy' | 'move' | 'remove' | 'update';
 
 /** A finished operation, as kept by `useFileOps` until the user dismisses it. */
 export interface Outcome {
   kind: OpKind;
-  /** Name of the target folder for a copy or move; null for a remove. */
+  /**
+   * Name of the target folder for a copy or move; the mod's name for an update of one mod in
+   * several folders; null for a remove and for an update of several mods.
+   */
   target: string | null;
+  /** Failures and successes are named by mod, except an update of one mod, named by folder. */
   result: OpResult;
   /** Mods whose existing version the user chose to replace (it goes to the Recycle Bin). */
   replaced: readonly string[];
@@ -38,6 +42,8 @@ export const emptyResult: OpResult = { done: [], skipped: [], failed: [] };
 function title(kind: OpKind, doneCount: number, target: string | null): string {
   if (doneCount === 0) return t.nothing[kind];
   if (kind === 'remove') return t.removed(doneCount);
+  // For an update the target is the one mod updated in several folders; none means several mods.
+  if (kind === 'update') return t.updated(doneCount, target);
   const where = target ?? '';
   return kind === 'copy' ? t.copied(doneCount, where) : t.moved(doneCount, where);
 }
@@ -56,7 +62,8 @@ export function describeOutcome(outcome: Outcome): OutcomeView {
 
   const pieces: string[] = [];
   if (result.skipped.length > 0) pieces.push(t.skipped(result.skipped.length));
-  if (failed.length > 0) pieces.push(t.failed(failed.length, kind));
+  if (failed.length > 0)
+    pieces.push(t.failed(failed.length, kind, kind === 'update' && outcome.target !== null));
   if (notDone.length > 0) pieces.push(t.notDone(notDone.length));
   const sentences: string[] = [];
   if (doneCount === 0 && failed.length === 0 && notDone.length === 0 && result.skipped.length > 0) {
@@ -66,6 +73,7 @@ export function describeOutcome(outcome: Outcome): OutcomeView {
   }
 
   if (kind === 'remove' && doneCount > 0) sentences.push(t.recycleNote);
+  if (kind === 'update' && doneCount > 0) sentences.push(t.updatedNote);
   const done = new Set(result.done);
   const replacedDone = outcome.replaced.filter((name) => done.has(name)).length;
   if (kind !== 'remove' && replacedDone > 0) sentences.push(t.replacedNote(replacedDone));
