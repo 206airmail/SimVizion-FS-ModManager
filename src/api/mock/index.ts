@@ -152,6 +152,13 @@ export function createMockApi(options: MockOptions = {}): Api {
     delayMs > 0 ? new Promise((resolve) => setTimeout(resolve, delayMs)) : Promise.resolve();
 
   return {
+    sampleData: true,
+    async addProfile(): Promise<Profile | null> {
+      await wait();
+      return null;
+    },
+    async openProfileFolder(): Promise<void> {},
+    async showModInFolder(): Promise<void> {},
     async getGameStatus(): Promise<GameStatus> {
       await wait();
       const testing = dataset(stress).profiles.find((p) => p.id === 'testing');

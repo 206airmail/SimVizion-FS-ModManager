@@ -14,6 +14,7 @@ function createApi(): Api {
     failMods: mode === 'error',
   });
   if (mode !== 'empty') return mock;
+  // Spread drops nothing the interface needs: `sampleData` is a plain property.
   return { ...mock, listMods: async () => [] };
 }
 

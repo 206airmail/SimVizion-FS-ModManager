@@ -766,6 +766,42 @@ fn game_status_end_to_end_with_a_stale_log() {
 }
 
 #[test]
+fn game_context_collects_folders_language_and_the_current_desc_version() {
+    let tmp = tempfile::tempdir().unwrap();
+    let (mut probe, _game) = steam_fixture(&tmp);
+    let (user_probe, user) = fake_user_folder(&tmp);
+    probe.documents = user_probe.documents;
+    fs::write(
+        user.join("gameSettings.xml"),
+        format!(
+            "<gameSettings><modsDirectoryOverride active=\"true\" directory=\"{}\"/></gameSettings>",
+            tmp.path().join("profile-a").to_string_lossy()
+        ),
+    )
+    .unwrap();
+    fs::write(
+        user.join("log.txt"),
+        STARTUP_LOG
+            .replace("1.10.0.0 b34141", "1.25.1.0 b99")
+            .replace("Language: en", "Language: de"),
+    )
+    .unwrap();
+
+    let ctx = game_context(&probe);
+    assert_eq!(ctx.user_dir.as_deref(), Some(user.as_path()));
+    assert_eq!(ctx.effective_mods_dir, Some(tmp.path().join("profile-a")));
+    assert_eq!(ctx.default_mods_dir, Some(user.join("mods")));
+    assert_eq!(ctx.languages, ["de"]);
+    assert_eq!(ctx.logged_desc_version, Some(100));
+
+    // Nothing known: English, no folders.
+    let empty = game_context(&FakeProbe::default());
+    assert_eq!(empty.languages, ["en"]);
+    assert_eq!(empty.user_dir, None);
+    assert_eq!(empty.effective_mods_dir, None);
+}
+
+#[test]
 fn game_status_degrades_gracefully() {
     // No game, no user folder, nothing readable.
     let status = game_status(&FakeProbe::default());
