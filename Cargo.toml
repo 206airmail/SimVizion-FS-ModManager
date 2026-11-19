@@ -10,3 +10,12 @@ license = "UNLICENSED"
 [workspace.dependencies]
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+
+# Zip inflate, DDS block decoding and thumbnail resizing are tens of times slower unoptimised,
+# which made first-time thumbnails take hundreds of milliseconds each in `tauri dev`.
+# Dependencies and the core library are optimised even in dev and test builds.
+[profile.dev.package."*"]
+opt-level = 2
+
+[profile.dev.package.fsmm-core]
+opt-level = 2

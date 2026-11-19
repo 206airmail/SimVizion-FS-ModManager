@@ -1,49 +1,66 @@
 # Status
 
-Updated: 2026-11-18, branch `m2-read-only-core`
+Updated: 2026-11-18, branch `m3-real-data`
 
 ## Active work
 
-Milestone 2 (read-only core in `crates/fsmm-core`) is built and waiting for the user's review as a pull request. Plan: `docs/dev/plans/2026-11-18-m2-read-only-core.md`. Milestone 1 merged to `main` as PR #1.
+Milestone 3 (real data in the app) is built and waiting for the user's review as a pull request. Plan: `docs/dev/plans/2026-11-18-m3-real-data.md`. M1 and M2 are merged to `main` (PRs #1 and #2).
 
-- `container`: read-only zip/folder access, case-insensitive names, size-capped reads.
-- `discovery`: Steam (registry + library folders), GIANTS (Uninstall keys) and Epic (manifests) installs; user folder via the Known Folder API; `modsDirectoryOverride` read without exposing any other settings text; game log summary; running game/server; suggested profile folders; `game_status`.
-- `scan`: enumerate, `read_mod` (modDesc with lenient `&` retry, language choice, kind, icon resolution), `assess` (all `IssueKind` rules), `scan_folder` in parallel.
-- `icons`: DDS (DXT1/3/5, BC7, uncompressed BGR/BGRA) and PNG to 256 px PNG thumbnails.
-- Dev tools (read-only): `cargo run -p fsmm-core --release --example discover`, `... --example scan_report -- <folder> [--list] [--thumbs-out <dir>]`.
+- `fsmm-core::store`: `library.sqlite` (profile registry) and `cache.sqlite` (scan records, thumbnails), with migrations.
+- `fsmm-core::library`:
+  - registry seeding;
+  - fresh, cache-assisted scans with progress;
+  - `also_in`, profile summaries, thumbnails.
+- `fsmm-core::discovery::game_context`: folders, language and the current descVersion for the library.
+- `src-tauri`: six commands (ids only), the `thumb` protocol, the folder picker, and Explorer open/reveal.
+- Frontend:
+  - Tauri `Api` client, chosen automatically in the desktop app;
+  - read progress;
+  - worded error codes and issue details;
+  - Add mod folder, Open folder, Show in folder;
+  - game status polled every 5 s and on focus;
+  - sample-data pill only for the mock.
 
 ## Next step
 
-User reviews the M2 pull request. After merge, plan Milestone 3: Tauri commands, SQLite cache, streaming scan, real data in the UI. M3 also has to update the mock and Inspector so issue details are worded in `src/strings.ts` (the core now returns data, not sentences).
+User reviews the M3 pull request. After merge, plan Milestone 4: switching the active folder (writing `modsDirectoryOverride` safely), backups and restore, and the running-game guard.
 
 ## Last verification
 
-2026-11-18, M2 integration branch:
+2026-11-18, M3 integration branch:
 
-- `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace` (156 passed, 1 ignored timing test).
-- `npm run check` (78 tests).
-- `npm run gen:types` produces no diff.
+- `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace` (214 passed, 1 ignored).
+- `npm run check` (108 tests). `npm run gen:types` produces no diff.
 
-Real-data smoke on the dev machine (read-only, release build, warm OS cache):
+Real app (`npm run tauri dev`, read-only, screenshots through `orca computer`):
 
-- `discover` finds the Steam install (1.25.1.0) and the redirected user folder, and reports the override as active with its folder present. It reports the log as stale (written by 1.10.0.0), so the descVersion check is off. It sees no game or server running and suggests the three mod folders.
-- `scan_report`:
-  - **Coverage:** all 590 zips in `mods` parse, including the one needing the `&` retry. Every one of the 612 icons across the three folders becomes a thumbnail.
-  - **Issues:** 6 sync-conflict copies and 3 zip/folder twins are flagged. The empty Syncthing `_staged` folder is reported as not a mod.
-  - **Timing in `mods`:** enumerate 43 ms, metadata 70–77 ms, thumbnails 1.1 s (591 icons, about 95 KiB of PNG each).
-- A visual check of BC7, BGR24, BGRA32, DXT3 and non-square thumbnails looked correct.
-
-M1, 2026-11-18/19 (unchanged since): `npm run tauri dev` opens the window and matches the browser rendering. Production build with 5,000 mods: list scroll step median 2.9 ms, p95 4.0 ms; grid p95 29 ms.
+- **Profiles and library:**
+  - The three real folders became profiles, with counts 592 / 6 / 15.
+  - `$testingMods` is marked ACTIVE, and `mods` is marked as the game default folder.
+  - Totals: 613 mods, 26.8 GB, 13 with issues.
+  - Real icons appear in list and grid.
+  - The inspector on a conflict copy shows "Copy of FS25_AgroForests".
+  - Descriptions keep their line breaks (fixed during integration).
+- **Explorer and the folder picker:**
+  - Open folder and Show in folder open Explorer on the right folder.
+  - The Add mod folder picker opens, and cancelling changes nothing.
+- **Timings (dev build):**
+  - `list_profiles`: 428 ms on the first launch with dependencies unoptimised, 207 ms with an empty cache once dependencies are optimised, 125 ms on a warm cache.
+  - `list_mods` for `mods` (592): 108 ms.
+  - Thumbnails: 612 ms average on first decode while dependencies were unoptimised, 34 ms after the dev opt-level change, 0.6 ms from the cache.
+- **Safety:** the three mod folders (2,747 files; name, size, mtime) and the `gameSettings.xml` mtime were identical before and after the session.
 
 ## Known issues
 
-- Cold-cache scan time is unmeasured (all runs were on a warm OS cache).
-- GIANTS and Epic detection is tested only against fixtures; neither install exists on the dev machine.
-- The game's exact descVersion acceptance rule and whether it swaps a missing `.png` icon for `.dds` are unconfirmed.
-- Thumbnails average about 95 KiB as PNG. Revisit the size when M3 adds the on-disk cache.
-- From M1:
-  - The grid view's p95 is 29 ms with 5,000 mods.
-  - The focus ring was checked by code, not seen.
+- Not checked in the real window:
+  - the 960×600 layout (window resizing needs foreground control);
+  - the game-running state (the game was not started);
+  - grid smoothness, which was only judged by eye on screenshots while scrolling.
+- `list_mods` scans other profiles that have no last scan one after another, so the first listing can scan every profile.
+- Cold-cache (first boot) disk timings are unmeasured.
+- From earlier milestones:
+  - GIANTS and Epic detection is fixture-only.
+  - The descVersion acceptance rule is unconfirmed.
   - The emblem is a placeholder.
-  - Buttons for later milestones are inert.
+  - Later-milestone buttons are inert.
   - Checkbox is not built.
