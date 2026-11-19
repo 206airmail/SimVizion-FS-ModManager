@@ -69,11 +69,22 @@ const LIBRARY_MIGRATIONS: &[&str] = &[
         result  TEXT NOT NULL
     );
 ",
+    // Tags and notes (plan M6 decision 5): per lower-cased mod name, shared by every profile.
+    // `tags` is a JSON array of strings; a row exists only while it holds a tag or a note.
+    "
+    CREATE TABLE mod_meta (
+        name_key   TEXT PRIMARY KEY,
+        tags       TEXT NOT NULL DEFAULT '[]',
+        note       TEXT,
+        updated_at TEXT
+    );
+",
 ];
 
 /// Migrations of `cache.sqlite`. The cache is disposable, so a file that fails to open or
 /// migrate is deleted and rebuilt.
-const CACHE_MIGRATIONS: &[&str] = &["
+const CACHE_MIGRATIONS: &[&str] = &[
+    "
     CREATE TABLE mods (
         path_key     TEXT PRIMARY KEY,
         folder_key   TEXT NOT NULL,
@@ -92,7 +103,23 @@ const CACHE_MIGRATIONS: &[&str] = &["
         png        BLOB NOT NULL
     );
     CREATE INDEX thumbnails_folder ON thumbnails (folder_key);
-"];
+",
+    // The game's file hash of a mod zip (plan M6 decision 2), valid while the file's size and
+    // mtime are unchanged. `salt` is the mod name the hash was computed with.
+    "
+    CREATE TABLE file_hashes (
+        path_key TEXT NOT NULL,
+        size     INTEGER NOT NULL,
+        mtime_ns INTEGER NOT NULL,
+        salt     TEXT NOT NULL,
+        md5      TEXT NOT NULL,
+        PRIMARY KEY (path_key, salt)
+    );
+",
+    // The content fingerprint of a scan record (plan M6 decision 1). Records written before
+    // it existed have the default, and `scan::SCAN_VERSION` makes them misses anyway.
+    "ALTER TABLE mods ADD COLUMN fingerprint TEXT NOT NULL DEFAULT '';",
+];
 
 /// The key two paths share when they name the same file or folder: lower-cased, `/` turned
 /// into `\`, without a trailing separator. The game log writes `/` and its settings write
@@ -187,7 +214,20 @@ pub struct NewFileOp<'a> {
 pub struct CachedMod {
     pub entry: ModEntry,
     pub icon: Option<IconLocation>,
+    /// `scan::ModRecord::fingerprint`; empty when the mod could not be opened.
+    pub fingerprint: String,
 }
+
+/// The user's tags and note for one mod name (`library.sqlite`, table `mod_meta`).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ModMeta {
+    pub tags: Vec<String>,
+    pub note: Option<String>,
+}
+
+/// A file whose cached game hash is wanted: the path, the stamp the hash must have been
+/// computed for, and the salt (the mod name).
+pub type HashQuery<'a> = (&'a Path, FileStamp, &'a str);
 
 /// Identity of one version of a mod file on disk.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -480,7 +520,7 @@ impl Store {
         let row = {
             let conn = lock(&self.cache);
             conn.query_row(
-                "SELECT entry_json, icon_json FROM mods \
+                "SELECT entry_json, icon_json, fingerprint FROM mods \
                  WHERE path_key = ?1 AND size = ?2 AND mtime_ns = ?3 AND scan_version = ?4",
                 params![
                     key,
@@ -488,11 +528,19 @@ impl Store {
                     mtime_ns(stamp.modified),
                     i64::from(version)
                 ],
-                |r| Ok((r.get::<_, String>(0)?, r.get::<_, Option<String>>(1)?)),
+                |r| {
+                    Ok((
+                        r.get::<_, String>(0)?,
+                        r.get::<_, Option<String>>(1)?,
+                        r.get::<_, String>(2)?,
+                    ))
+                },
             )
             .optional()?
         };
-        Ok(row.and_then(|(entry, icon)| decode_record(&entry, icon.as_deref())))
+        Ok(row.and_then(|(entry, icon, fingerprint)| {
+            decode_record(&entry, icon.as_deref(), fingerprint)
+        }))
     }
 
     /// Every cached record of the files directly inside `folder` for the current
@@ -508,7 +556,7 @@ impl Store {
     ) -> Result<CachedFolder, StoreError> {
         let conn = lock(&self.cache);
         let mut stmt = conn.prepare_cached(
-            "SELECT path_key, size, mtime_ns, entry_json, icon_json FROM mods \
+            "SELECT path_key, size, mtime_ns, entry_json, icon_json, fingerprint FROM mods \
              WHERE folder_key = ?1 AND scan_version = ?2",
         )?;
         let raw = stmt.query_map(params![path_key(folder), i64::from(version)], |r| {
@@ -518,13 +566,14 @@ impl Store {
                 r.get::<_, i64>(2)?,
                 r.get::<_, String>(3)?,
                 r.get::<_, Option<String>>(4)?,
+                r.get::<_, String>(5)?,
             ))
         })?;
         let mut rows = HashMap::new();
         for row in raw {
-            let (key, size, mtime_ns, entry, icon) = row?;
+            let (key, size, mtime_ns, entry, icon, fingerprint) = row?;
             // A row this build cannot decode is just a miss; the scan overwrites it.
-            if let Some(record) = decode_record(&entry, icon.as_deref()) {
+            if let Some(record) = decode_record(&entry, icon.as_deref(), fingerprint) {
                 rows.insert(
                     key,
                     CachedRow {
@@ -568,17 +617,18 @@ impl Store {
                 .as_ref()
                 .map(serde_json::to_string)
                 .transpose()?;
-            encoded.push((key, folder, *stamp, entry, icon));
+            encoded.push((key, folder, *stamp, entry, icon, &record.fingerprint));
         }
         let mut conn = lock(&self.cache);
         let tx = conn.transaction()?;
         {
             let mut stmt = tx.prepare_cached(
                 "INSERT OR REPLACE INTO mods \
-                 (path_key, folder_key, size, mtime_ns, scan_version, entry_json, icon_json) \
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                 (path_key, folder_key, size, mtime_ns, scan_version, entry_json, icon_json, \
+                  fingerprint) \
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
             )?;
-            for (key, folder, stamp, entry, icon) in &encoded {
+            for (key, folder, stamp, entry, icon, fingerprint) in &encoded {
                 stmt.execute(params![
                     key,
                     folder,
@@ -586,7 +636,8 @@ impl Store {
                     mtime_ns(stamp.modified),
                     i64::from(version),
                     entry,
-                    icon
+                    icon,
+                    fingerprint
                 ])?;
             }
         }
@@ -668,6 +719,167 @@ impl Store {
         )?;
         Ok(())
     }
+
+    // ---- game file hashes (cache.sqlite) ----
+
+    /// The cached game hash of each file, in the order asked: `Some` only when it was stored
+    /// for exactly this size, mtime and salt. One lock and one prepared statement for all.
+    pub fn cached_hashes(
+        &self,
+        items: &[HashQuery<'_>],
+    ) -> Result<Vec<Option<String>>, StoreError> {
+        let conn = lock(&self.cache);
+        let mut stmt = conn.prepare_cached(
+            "SELECT md5 FROM file_hashes \
+             WHERE path_key = ?1 AND salt = ?2 AND size = ?3 AND mtime_ns = ?4",
+        )?;
+        items
+            .iter()
+            .map(|(path, stamp, salt)| {
+                Ok(stmt
+                    .query_row(
+                        params![
+                            path_key(path),
+                            salt,
+                            size_i64(stamp.size),
+                            mtime_ns(stamp.modified)
+                        ],
+                        |r| r.get::<_, String>(0),
+                    )
+                    .optional()?)
+            })
+            .collect()
+    }
+
+    /// Stores game hashes in one transaction, replacing any for the same path and salt.
+    pub fn put_hashes(&self, items: &[(HashQuery<'_>, &str)]) -> Result<(), StoreError> {
+        let mut conn = lock(&self.cache);
+        let tx = conn.transaction()?;
+        {
+            let mut stmt = tx.prepare_cached(
+                "INSERT OR REPLACE INTO file_hashes (path_key, size, mtime_ns, salt, md5) \
+                 VALUES (?1, ?2, ?3, ?4, ?5)",
+            )?;
+            for ((path, stamp, salt), md5) in items {
+                stmt.execute(params![
+                    path_key(path),
+                    size_i64(stamp.size),
+                    mtime_ns(stamp.modified),
+                    salt,
+                    md5
+                ])?;
+            }
+        }
+        tx.commit()?;
+        Ok(())
+    }
+
+    // ---- tags and notes (library.sqlite) ----
+
+    /// Every mod name's tags and note, by lower-cased mod name. Rows exist only for mods that
+    /// have a tag or a note, so this is small and one query serves a whole listing.
+    pub fn all_mod_meta(&self) -> Result<HashMap<String, ModMeta>, StoreError> {
+        let conn = lock(&self.library);
+        let mut stmt = conn.prepare_cached("SELECT name_key, tags, note FROM mod_meta")?;
+        let rows = stmt.query_map([], |r| {
+            Ok((
+                r.get::<_, String>(0)?,
+                r.get::<_, String>(1)?,
+                r.get::<_, Option<String>>(2)?,
+            ))
+        })?;
+        let mut out = HashMap::new();
+        for row in rows {
+            let (key, tags, note) = row?;
+            out.insert(
+                key,
+                ModMeta {
+                    tags: serde_json::from_str(&tags)?,
+                    note,
+                },
+            );
+        }
+        Ok(out)
+    }
+
+    /// The tags and note of one mod name; empty when it has none.
+    pub fn mod_meta(&self, name_key: &str) -> Result<ModMeta, StoreError> {
+        let conn = lock(&self.library);
+        read_meta(&conn, name_key)
+    }
+
+    /// Replaces a mod name's tags. The row is removed when no tag and no note remain.
+    pub fn set_mod_tags(&self, name_key: &str, tags: &[String]) -> Result<(), StoreError> {
+        let json = serde_json::to_string(tags)?;
+        let mut conn = lock(&self.library);
+        let tx = conn.transaction()?;
+        tx.execute(
+            "INSERT INTO mod_meta (name_key, tags, updated_at) VALUES (?1, ?2, ?3) \
+             ON CONFLICT (name_key) DO UPDATE SET tags = ?2, updated_at = ?3",
+            params![name_key, json, now_rfc3339()],
+        )?;
+        drop_empty_meta(&tx, name_key)?;
+        tx.commit()?;
+        Ok(())
+    }
+
+    /// Sets (or with `None` clears) a mod name's note. The row is removed when no tag and no
+    /// note remain.
+    pub fn set_mod_note(&self, name_key: &str, note: Option<&str>) -> Result<(), StoreError> {
+        let mut conn = lock(&self.library);
+        let tx = conn.transaction()?;
+        tx.execute(
+            "INSERT INTO mod_meta (name_key, note, updated_at) VALUES (?1, ?2, ?3) \
+             ON CONFLICT (name_key) DO UPDATE SET note = ?2, updated_at = ?3",
+            params![name_key, note, now_rfc3339()],
+        )?;
+        drop_empty_meta(&tx, name_key)?;
+        tx.commit()?;
+        Ok(())
+    }
+
+    /// Every tag in use, each once. Spellings that differ only by case count as one; the one
+    /// kept is the first met in mod-name order. Sorted case-insensitively.
+    pub fn all_tags(&self) -> Result<Vec<String>, StoreError> {
+        let conn = lock(&self.library);
+        let mut stmt = conn.prepare_cached("SELECT tags FROM mod_meta ORDER BY name_key")?;
+        let rows = stmt.query_map([], |r| r.get::<_, String>(0))?;
+        let mut seen: HashMap<String, String> = HashMap::new();
+        for row in rows {
+            for tag in serde_json::from_str::<Vec<String>>(&row?)? {
+                seen.entry(tag.to_lowercase()).or_insert(tag);
+            }
+        }
+        let mut tags: Vec<(String, String)> = seen.into_iter().collect();
+        tags.sort();
+        Ok(tags.into_iter().map(|(_, tag)| tag).collect())
+    }
+}
+
+fn read_meta(conn: &Connection, name_key: &str) -> Result<ModMeta, StoreError> {
+    let row = conn
+        .query_row(
+            "SELECT tags, note FROM mod_meta WHERE name_key = ?1",
+            [name_key],
+            |r| Ok((r.get::<_, String>(0)?, r.get::<_, Option<String>>(1)?)),
+        )
+        .optional()?;
+    match row {
+        Some((tags, note)) => Ok(ModMeta {
+            tags: serde_json::from_str(&tags)?,
+            note,
+        }),
+        None => Ok(ModMeta::default()),
+    }
+}
+
+/// Deletes the row of a mod name that has neither a tag nor a note.
+fn drop_empty_meta(conn: &Connection, name_key: &str) -> Result<(), StoreError> {
+    conn.execute(
+        "DELETE FROM mod_meta WHERE name_key = ?1 AND tags = '[]' AND note IS NULL",
+        [name_key],
+    )?;
+    Ok(())
 }
 
 /// A poisoned lock only means another thread panicked mid-call; every call here is a single
@@ -707,13 +919,26 @@ fn op_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<StoredOp> {
     })
 }
 
-fn decode_record(entry_json: &str, icon_json: Option<&str>) -> Option<CachedMod> {
+fn decode_record(
+    entry_json: &str,
+    icon_json: Option<&str>,
+    fingerprint: String,
+) -> Option<CachedMod> {
     let entry = serde_json::from_str(entry_json).ok()?;
     let icon = match icon_json {
         Some(json) => Some(serde_json::from_str(json).ok()?),
         None => None,
     };
-    Some(CachedMod { entry, icon })
+    Some(CachedMod {
+        entry,
+        icon,
+        fingerprint,
+    })
+}
+
+/// RFC 3339 UTC with second precision, for `updated_at` columns.
+fn now_rfc3339() -> String {
+    humantime::format_rfc3339_seconds(SystemTime::now()).to_string()
 }
 
 fn create_parent(file: &Path) -> Result<(), StoreError> {

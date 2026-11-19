@@ -96,10 +96,10 @@ struct Existing {
 }
 
 /// Holds the `busy` flag until dropped, so a panic in a callback releases it too.
-struct BusyGuard<'a>(&'a AtomicBool);
+pub(super) struct BusyGuard<'a>(&'a AtomicBool);
 
 impl<'a> BusyGuard<'a> {
-    fn acquire(flag: &'a AtomicBool) -> Result<Self, ApiError> {
+    pub(super) fn acquire(flag: &'a AtomicBool) -> Result<Self, ApiError> {
         flag.compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
             .map(|_| Self(flag))
             .map_err(|_| ApiError::new(ErrorCode::Busy, None))
@@ -251,7 +251,7 @@ fn stops_operation(code: ErrorCode) -> bool {
     )
 }
 
-fn summary(entry: &ModEntry) -> ModSummary {
+pub(super) fn summary(entry: &ModEntry) -> ModSummary {
     ModSummary {
         file_name: entry.file_name.clone(),
         version: entry.version.clone(),
