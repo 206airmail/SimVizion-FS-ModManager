@@ -51,6 +51,25 @@ describe('strings.issueDetail', () => {
   });
 });
 
+describe('strings.switching and strings.restore', () => {
+  it('names the new active folder and the restore date', () => {
+    expect(strings.switching.doneTitle('Offline Testing')).toContain('Offline Testing');
+    expect(strings.restore.action('Nov 17, 2026, 6:42 PM')).toBe(
+      'Restore the backup from Nov 17, 2026, 6:42 PM',
+    );
+  });
+
+  it('words an undo with and without a known folder', () => {
+    expect(strings.switching.undoneText('Testing')).toContain('Testing');
+    expect(strings.switching.undoneText(null)).toBeTruthy();
+  });
+
+  it('has a title for each action that can fail', () => {
+    for (const title of Object.values(strings.actionFailed)) expect(title).toBeTruthy();
+    expect(strings.actionFailed.setActive).not.toBe(strings.actionFailed.undoSwitch);
+  });
+});
+
 describe('strings.readingMods', () => {
   it('words the progress of a folder read', () => {
     expect(strings.states.readingMods(120, 590)).toBe('Reading 120 of 590 mods');

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { GameStatus } from '../../api';
 import { api } from '../../api/client';
 
@@ -12,30 +12,41 @@ const sameStatus = (a: GameStatus | null, b: GameStatus) =>
  * The live game status: read at once, every few seconds, and when the window comes back into
  * view or regains focus. Polling stops while the document is hidden. A refresh never shows a
  * loading state: the last known status stays until a new one differs, and a failed read keeps it.
+ * `refresh` reads it now (after a write to gameSettings.xml); its result wins over any poll that
+ * started earlier and is still in flight.
  */
-export function useGameStatus(): GameStatus | null {
+export function useGameStatus(): { game: GameStatus | null; refresh: () => Promise<void> } {
   const [game, setGame] = useState<GameStatus | null>(null);
+  const readNow = useRef<() => Promise<void>>(() => Promise.resolve());
+  const refresh = useCallback(() => readNow.current(), []);
 
   useEffect(() => {
     let active = true;
     let reading = false;
+    let latest = 0;
     let timer: ReturnType<typeof setInterval> | undefined;
 
-    const refresh = async () => {
-      if (reading) return;
+    // A forced read runs even while a poll is in flight; only the newest read is applied.
+    const read = async (force: boolean) => {
+      if (reading && !force) return;
+      const mine = ++latest;
       reading = true;
       try {
         const next = await api.getGameStatus();
         // Returning the previous object keeps the screens from re-rendering for nothing.
-        if (active) setGame((previous) => (sameStatus(previous, next) ? previous : next));
+        if (active && mine === latest) {
+          setGame((previous) => (sameStatus(previous, next) ? previous : next));
+        }
       } catch {
         // Keep showing the last known status; the next tick tries again.
       } finally {
-        reading = false;
+        if (mine === latest) reading = false;
       }
     };
+    readNow.current = () => read(true);
+
     const startPolling = () => {
-      timer ??= setInterval(() => void refresh(), GAME_STATUS_INTERVAL_MS);
+      timer ??= setInterval(() => void read(false), GAME_STATUS_INTERVAL_MS);
     };
     const stopPolling = () => {
       clearInterval(timer);
@@ -45,15 +56,15 @@ export function useGameStatus(): GameStatus | null {
       if (document.hidden) {
         stopPolling();
       } else {
-        void refresh();
+        void read(false);
         startPolling();
       }
     };
     const onFocus = () => {
-      if (!document.hidden) void refresh();
+      if (!document.hidden) void read(false);
     };
 
-    void refresh();
+    void read(false);
     if (!document.hidden) startPolling();
     document.addEventListener('visibilitychange', onVisibilityChange);
     window.addEventListener('focus', onFocus);
@@ -65,5 +76,5 @@ export function useGameStatus(): GameStatus | null {
     };
   }, []);
 
-  return game;
+  return { game, refresh };
 }

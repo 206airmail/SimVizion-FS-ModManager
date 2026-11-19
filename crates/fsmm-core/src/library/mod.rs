@@ -29,6 +29,7 @@ use crate::model::{ApiError, ErrorCode, ModEntry, Profile, ScanProgress};
 use crate::scan::{self, ModRecord};
 use crate::store::{path_key, CachedMod, FileStamp, Store, StoreError, StoredProfile};
 
+mod switching;
 #[cfg(test)]
 mod tests;
 

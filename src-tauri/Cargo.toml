@@ -12,6 +12,8 @@ tauri-build = { version = "2", features = [] }
 [dependencies]
 # All reading of Farming Simulator files; this crate is only the command layer.
 fsmm-core = { path = "../crates/fsmm-core" }
+# RFC 3339 time of the newest settings backup for the frontend.
+humantime = "2.4.0"
 # Command arguments, results and errors.
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true

@@ -9,13 +9,17 @@
 //   add_profile                                             -> Profile | null
 //   open_profile_folder { profileId }                       -> null
 //   show_mod_in_folder  { profileId, modId }                -> null
+//   set_active_profile  { profileId }                       -> SwitchResult
+//   undo_switch         { opId }                            -> SwitchResult
+//   latest_settings_backup                                  -> string | null (ISO time)
+//   restore_settings_backup                                 -> null
 //
 // A failing command rejects with an ApiError object `{ code, detail }`.
 // Thumbnails are not commands: ModEntry.icon is an http://thumb.localhost/... URL served by a
 // custom protocol in src-tauri.
 
 import { Channel, invoke } from '@tauri-apps/api/core';
-import type { Api, ApiError, GameStatus, ModEntry, Profile, ScanProgress } from '.';
+import type { Api, ApiError, GameStatus, ModEntry, Profile, ScanProgress, SwitchResult } from '.';
 import { ApiFailure, isErrorCode } from '../lib/errors';
 
 function isApiError(value: unknown): value is ApiError {
@@ -59,6 +63,13 @@ export function createTauriApi(): Api {
     },
     async showModInFolder(profileId: string, modId: string) {
       await call('show_mod_in_folder', { profileId, modId });
+    },
+    setActiveProfile: (profileId: string) =>
+      call<SwitchResult>('set_active_profile', { profileId }),
+    undoSwitch: (opId: string) => call<SwitchResult>('undo_switch', { opId }),
+    latestSettingsBackup: () => call<string | null>('latest_settings_backup'),
+    async restoreSettingsBackup() {
+      await call('restore_settings_backup');
     },
   };
 }

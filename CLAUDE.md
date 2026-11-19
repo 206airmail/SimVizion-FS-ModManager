@@ -40,7 +40,8 @@ Current work state: `docs/dev/STATUS.md` (read before substantial work). Decisio
 - Tests never touch a real Farming Simulator folder. `fsmm-core` functions take every root path as a parameter; tests use temp directories and generated fixtures.
 - Never log or commit the contents of `gameSettings.xml` (it holds plain-text multiplayer passwords), real mod files, real mod icons, or machine-specific paths.
 - Nothing is deleted outright. Removal goes to the Windows Recycle Bin and must fail rather than fall back to permanent deletion.
-- No writes to game files while the game or the dedicated server is running.
+- No writes to game files while the game or the dedicated server is running. All game-file writes go through `fsmm-core::ops` (guard, backup, atomic replace, verify, journal).
+- Debug builds refuse to write game files unless `FSMM_ALLOW_GAME_WRITES=1` is set. Only set it for a test the user has approved.
 - The desktop app reads the real game folders. Its own files are `library.sqlite` (user data, `%APPDATA%\com.simvizion.modmanager`) and `cache.sqlite` (disposable, `%LOCALAPPDATA%\com.simvizion.modmanager`).
 - No network calls before the mod-updates milestone, and never telemetry.
 

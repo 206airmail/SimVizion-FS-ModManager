@@ -450,6 +450,76 @@ fn thumbnails_round_trip_and_miss_on_a_changed_stamp() {
 }
 
 #[test]
+fn journal_rows_round_trip_and_ids_follow_the_rowid() {
+    let store = Store::open_in_memory().unwrap();
+    assert_eq!(store.latest_ok_op().unwrap(), None);
+    assert!(store.ops().unwrap().is_empty());
+
+    let a = ModsOverride {
+        active: true,
+        directory: Some(PathBuf::from("C:\\mods\\a")),
+    };
+    let default = ModsOverride {
+        active: false,
+        directory: None,
+    };
+    let id1 = store
+        .add_op(&NewOp {
+            kind: "switch",
+            from: &a,
+            to: &default,
+            backup_file: Some("gameSettings-1.xml"),
+            result: "ok",
+        })
+        .unwrap();
+    let id2 = store
+        .add_op(&NewOp {
+            kind: "undo",
+            from: &default,
+            to: &a,
+            backup_file: None,
+            result: "settingsChanged",
+        })
+        .unwrap();
+    assert_eq!((id1.as_str(), id2.as_str()), ("o1", "o2"));
+
+    let ops = store.ops().unwrap();
+    assert_eq!(ops.len(), 2);
+    assert_eq!(ops[0].kind, "switch");
+    assert_eq!(ops[0].from, a);
+    assert_eq!(ops[0].to, default);
+    assert_eq!(ops[0].backup_file.as_deref(), Some("gameSettings-1.xml"));
+    assert!(ops[0].at > 0);
+    assert_eq!(ops[1].backup_file, None);
+
+    // Failed attempts are rows but are never the latest successful write.
+    assert_eq!(store.latest_ok_op().unwrap().unwrap().id, "o1");
+}
+
+#[test]
+fn the_journal_survives_reopening() {
+    let dir = tempfile::tempdir().unwrap();
+    let library = dir.path().join("library.sqlite");
+    let cache = dir.path().join("cache.sqlite");
+    let state = ModsOverride::default();
+    {
+        let store = Store::open(&library, &cache).unwrap();
+        store
+            .add_op(&NewOp {
+                kind: "restore",
+                from: &state,
+                to: &state,
+                backup_file: Some("b.xml"),
+                result: "ok",
+            })
+            .unwrap();
+    }
+    let store = Store::open(&library, &cache).unwrap();
+    assert_eq!(store.ops().unwrap().len(), 1);
+    assert_eq!(store.latest_ok_op().unwrap().unwrap().kind, "restore");
+}
+
+#[test]
 fn store_is_send_and_sync() {
     fn assert_send_sync<T: Send + Sync>() {}
     assert_send_sync::<Store>();

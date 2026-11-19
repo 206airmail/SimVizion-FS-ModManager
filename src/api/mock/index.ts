@@ -1,4 +1,4 @@
-import type { Api, GameStatus, ModEntry, Profile, ScanProgress } from '..';
+import type { Api, GameStatus, ModEntry, Profile, ScanProgress, SwitchResult } from '..';
 import { ApiFailure } from '../../lib/errors';
 import { GAME_DESC_VERSION } from './entry';
 import { createRng } from './prng';
@@ -11,6 +11,28 @@ export interface MockOptions {
   delayMs?: number;
   /** When true, listMods rejects with a folderUnreadable ApiFailure. Default false. */
   failMods?: boolean;
+  /** The game is running: the status says so and switching is refused. Default false. */
+  gameRunning?: boolean;
+  /** The dedicated server is running: the status says so and switching is refused. Default false. */
+  serverRunning?: boolean;
+  /** gameSettings.xml is unreadable until restoreSettingsBackup runs; a backup exists. Default false. */
+  brokenSettings?: boolean;
+  /** setActiveProfile rejects with a writeFailed ApiFailure. Default false. */
+  writeFails?: boolean;
+}
+
+/** The mock's newest settings backup, offered while `brokenSettings` is on. */
+export const MOCK_BACKUP_AT = '2026-11-17T18:42:00Z';
+
+/** The profile that is active at start, and the one whose folder is the game's default. */
+const INITIAL_ACTIVE_ID = 'testing';
+const DEFAULT_PROFILE_ID = 'main';
+
+interface MockOp {
+  id: string;
+  kind: 'switch' | 'undo';
+  fromId: string | null;
+  toId: string | null;
 }
 
 /** How many progress events a mock listMods emits across its delay. */
@@ -151,9 +173,38 @@ function dataset(stress: boolean): Dataset {
 
 /** A deterministic in-memory Api. The same options always return the same data. */
 export function createMockApi(options: MockOptions = {}): Api {
-  const { stress = false, delayMs = 250, failMods = false } = options;
+  const {
+    stress = false,
+    delayMs = 250,
+    failMods = false,
+    gameRunning = false,
+    serverRunning = false,
+    brokenSettings = false,
+    writeFails = false,
+  } = options;
   const wait = (): Promise<void> =>
     delayMs > 0 ? new Promise((resolve) => setTimeout(resolve, delayMs)) : Promise.resolve();
+
+  // Switching state lives in this instance; the shared dataset is never mutated.
+  let activeId: string | null = INITIAL_ACTIVE_ID;
+  let settingsBroken = brokenSettings;
+  const ops: MockOp[] = [];
+  const pathOf = (id: string | null) =>
+    dataset(stress).profiles.find((p) => p.id === id)?.path ?? null;
+
+  /** Guards shared by a switch and an undo, in the order the core checks them. */
+  const assertWritable = () => {
+    if (gameRunning) throw new ApiFailure('gameRunning');
+    if (serverRunning) throw new ApiFailure('serverRunning');
+    if (settingsBroken) throw new ApiFailure('settingsUnreadable');
+  };
+  const record = (kind: MockOp['kind'], toId: string | null): SwitchResult => {
+    const fromId = activeId;
+    activeId = toId;
+    const op: MockOp = { id: String(ops.length + 1), kind, fromId, toId };
+    ops.push(op);
+    return { opId: op.id, fromProfileId: fromId, toProfileId: toId };
+  };
 
   return {
     sampleData: true,
@@ -163,22 +214,55 @@ export function createMockApi(options: MockOptions = {}): Api {
     },
     async openProfileFolder(): Promise<void> {},
     async showModInFolder(): Promise<void> {},
+    async setActiveProfile(profileId: string): Promise<SwitchResult> {
+      await wait();
+      assertWritable();
+      if (!dataset(stress).profiles.some((p) => p.id === profileId)) {
+        throw new ApiFailure('profileNotFound');
+      }
+      if (writeFails) throw new ApiFailure('writeFailed');
+      return record('switch', profileId);
+    },
+    /** Reverses the latest operation only, and only a switch (an undo is not undone). */
+    async undoSwitch(opId: string): Promise<SwitchResult> {
+      await wait();
+      assertWritable();
+      const latest = ops.at(-1);
+      if (latest?.id !== opId || latest.kind !== 'switch') throw new ApiFailure('nothingToUndo');
+      return record('undo', latest.fromId);
+    },
+    async latestSettingsBackup(): Promise<string | null> {
+      await wait();
+      return brokenSettings ? MOCK_BACKUP_AT : null;
+    },
+    async restoreSettingsBackup(): Promise<void> {
+      await wait();
+      if (!brokenSettings) throw new ApiFailure('noBackup');
+      if (gameRunning) throw new ApiFailure('gameRunning');
+      if (serverRunning) throw new ApiFailure('serverRunning');
+      settingsBroken = false;
+    },
     async getGameStatus(): Promise<GameStatus> {
       await wait();
-      const testing = dataset(stress).profiles.find((p) => p.id === 'testing');
+      // The game's default folder means the override is off; an unreadable file tells us nothing.
+      const overrideActive =
+        !settingsBroken && activeId !== null && activeId !== DEFAULT_PROFILE_ID;
       return {
         gameVersion: '1.25.1.0',
-        gameRunning: false,
-        serverRunning: false,
-        settingsReadable: true,
-        overrideActive: true,
-        effectiveModsDir: testing?.path ?? null,
+        gameRunning,
+        serverRunning,
+        settingsReadable: !settingsBroken,
+        overrideActive,
+        effectiveModsDir: settingsBroken ? null : pathOf(activeId),
         loggedDescVersion: GAME_DESC_VERSION,
       };
     },
     async listProfiles(): Promise<Profile[]> {
       await wait();
-      return dataset(stress).profiles.map((p) => ({ ...p }));
+      return dataset(stress).profiles.map((p) => ({
+        ...p,
+        isActive: !settingsBroken && p.id === activeId,
+      }));
     },
     async listMods(
       profileId: string,

@@ -192,8 +192,40 @@ pub enum ErrorCode {
     FolderMissing,
     /// The folder exists but could not be listed or read.
     FolderUnreadable,
+    /// A write to game files was refused because the game is running.
+    GameRunning,
+    /// A write to game files was refused because the dedicated server is running.
+    ServerRunning,
+    /// `gameSettings.xml` does not exist (the game has not been started yet).
+    SettingsMissing,
+    /// `gameSettings.xml` exists but is not readable XML in UTF-8.
+    SettingsUnreadable,
+    /// `gameSettings.xml` changed while the app was writing it, or no longer holds what the
+    /// operation being undone wrote. Nothing was written.
+    SettingsChanged,
+    /// Writing `gameSettings.xml` failed; the original is unchanged.
+    WriteFailed,
+    /// This build refuses to write game files (debug builds without `FSMM_ALLOW_GAME_WRITES=1`).
+    WritesDisabled,
+    /// The operation to undo is unknown or is not the most recent one.
+    NothingToUndo,
+    /// No backup of `gameSettings.xml` exists to restore.
+    NoBackup,
     /// Anything unexpected; `detail` holds a technical message for a bug report.
     Internal,
+}
+
+/// The outcome of switching the active mod folder (or undoing a switch).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct SwitchResult {
+    /// Journal id of this write; pass it to `undoSwitch`.
+    pub op_id: String,
+    /// The profile that was active before, if it is registered.
+    pub from_profile_id: Option<String>,
+    /// The profile that is active now, if it is registered.
+    pub to_profile_id: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
