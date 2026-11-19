@@ -1,17 +1,19 @@
 import { Play } from 'lucide-react';
 import type { GameStatus, Profile } from '../../api';
 import { strings } from '../../strings';
-import { Button } from '../../ui/Button';
 import { cx } from '../../ui/cx';
+import { ReasonButton } from '../files/ReasonButton';
 import { Emblem } from './Emblem';
+import type { LaunchController } from './useLaunch';
 
 export interface AppHeaderProps {
   activeProfile: Profile | null;
   game: GameStatus | null;
+  launch: LaunchController;
 }
 
 /** Identity region: product mark, where the game is pointed, and the app-level primary action. */
-export function AppHeader({ activeProfile, game }: AppHeaderProps) {
+export function AppHeader({ activeProfile, game, launch }: AppHeaderProps) {
   const t = strings.header;
   return (
     <header className="mm-header">
@@ -46,9 +48,16 @@ export function AppHeader({ activeProfile, game }: AppHeaderProps) {
         </div>
       </dl>
 
-      <Button variant="primary" icon={Play} illuminated>
-        {t.launch}
-      </Button>
+      <ReasonButton
+        variant="primary"
+        icon={Play}
+        illuminated={launch.view.blockedReason === null}
+        hint={t.launchHint}
+        blockedReason={launch.view.blockedReason}
+        onClick={launch.launch}
+      >
+        {launch.view.starting ? t.launchStarting : t.launch}
+      </ReasonButton>
     </header>
   );
 }
