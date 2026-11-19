@@ -10,7 +10,7 @@ use std::io;
 use std::path::{Path, PathBuf};
 
 use crate::container::ModContainer;
-use crate::model::{ApiError, GameStatus, GameStore, UserDirSource};
+use crate::model::{ApiError, ErrorCode, GameStatus, GameStore, UserDirSource};
 
 mod gamelog;
 mod settings;
@@ -97,14 +97,50 @@ pub enum LaunchTarget {
 
 /// What "Launch game" would start: the first install found. `GameRunning` while the game runs,
 /// `NotLaunchable` when nothing was found (or the install lacks what its store needs).
-pub fn launch_target(_probe: &dyn SystemProbe) -> Result<LaunchTarget, ApiError> {
-    todo!("WS-A")
+pub fn launch_target(probe: &dyn SystemProbe) -> Result<LaunchTarget, ApiError> {
+    if running(probe).game {
+        return Err(ApiError::new(ErrorCode::GameRunning, None));
+    }
+    find_installs(probe)
+        .first()
+        .and_then(target_for)
+        .ok_or_else(|| ApiError::new(ErrorCode::NotLaunchable, None))
+}
+
+/// How an install is started, or `None` when it lacks what its store needs. The ids that end
+/// up in a URL or a shell path are restricted to a safe alphabet, so nothing read from a
+/// manifest or the registry can add to them.
+fn target_for(install: &GameInstall) -> Option<LaunchTarget> {
+    let id = install.launch_id.as_deref();
+    match install.store {
+        Store::Steam => Some(LaunchTarget::Url(format!(
+            "steam://rungameid/{STEAM_APP_ID}"
+        ))),
+        Store::Epic => {
+            let app_name = id.filter(|id| safe_id(id, |c| matches!(c, '.' | '_' | '-')))?;
+            Some(LaunchTarget::Url(format!(
+                "com.epicgames.launcher://apps/{app_name}?action=launch&silent=true"
+            )))
+        }
+        Store::Giants => Some(LaunchTarget::Program {
+            exe: install.dir.join(GAME_EXE),
+            dir: install.dir.clone(),
+        }),
+        Store::MicrosoftStore => id
+            .filter(|id| safe_id(id, |c| matches!(c, '.' | '_' | '!' | '-')))
+            .map(|id| LaunchTarget::AppsFolder(id.to_owned())),
+    }
+}
+
+/// Non-empty, ASCII letters and digits plus the characters `extra` accepts.
+fn safe_id(id: &str, extra: fn(char) -> bool) -> bool {
+    !id.is_empty() && id.chars().all(|c| c.is_ascii_alphanumeric() || extra(c))
 }
 
 /// Whether a folder the user chose can be the game's user folder: it holds
 /// `gameSettings.xml` or a `mods` folder.
-pub fn valid_game_folder(_dir: &Path) -> bool {
-    todo!("WS-A")
+pub fn valid_game_folder(dir: &Path) -> bool {
+    dir.join("gameSettings.xml").is_file() || dir.join("mods").is_dir()
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -147,25 +183,40 @@ const UNINSTALL_KEYS: [&str; 2] = [
 ];
 const GAME_DISPLAY_NAME: &str = "farming simulator 25";
 
-/// Every install found, each validated by the presence of [`GAME_EXE`]. Steam installs come
-/// first, then GIANTS, then Epic; the same folder is listed once.
+/// Every install found. Steam, GIANTS and Epic installs are validated by the presence of
+/// [`GAME_EXE`]; a Microsoft Store install only needs its package folder, because WindowsApps
+/// is often unreadable. Steam installs come first, then GIANTS, Epic and the Microsoft Store;
+/// the same folder is listed once.
 pub fn find_installs(probe: &dyn SystemProbe) -> Vec<GameInstall> {
-    let mut candidates: Vec<(Store, PathBuf)> = steam::candidates(probe)
+    let mut candidates: Vec<(Store, PathBuf, Option<String>)> = steam::candidates(probe)
         .into_iter()
-        .map(|dir| (Store::Steam, dir))
+        .map(|dir| (Store::Steam, dir, None))
         .collect();
     candidates.extend(
         giants_candidates(probe)
             .into_iter()
-            .map(|d| (Store::Giants, d)),
+            .map(|d| (Store::Giants, d, None)),
     );
-    candidates.extend(epic_candidates(probe).into_iter().map(|d| (Store::Epic, d)));
+    candidates.extend(
+        epic_candidates(probe)
+            .into_iter()
+            .map(|(d, app_name)| (Store::Epic, d, app_name)),
+    );
+    candidates.extend(
+        store_candidates(probe)
+            .into_iter()
+            .map(|(d, id)| (Store::MicrosoftStore, d, Some(id))),
+    );
 
     let mut seen: Vec<String> = Vec::new();
     let mut installs = Vec::new();
-    for (store, dir) in candidates {
+    for (store, dir, launch_id) in candidates {
         let key = path_key(&dir);
-        if seen.contains(&key) || !dir.join(GAME_EXE).is_file() {
+        let present = match store {
+            Store::MicrosoftStore => dir.is_dir(),
+            _ => dir.join(GAME_EXE).is_file(),
+        };
+        if seen.contains(&key) || !present {
             continue;
         }
         seen.push(key);
@@ -174,7 +225,7 @@ pub fn find_installs(probe: &dyn SystemProbe) -> Vec<GameInstall> {
             store,
             dir,
             version,
-            launch_id: None,
+            launch_id,
         });
     }
     installs
@@ -222,8 +273,8 @@ fn giants_candidates(probe: &dyn SystemProbe) -> Vec<PathBuf> {
     out
 }
 
-/// `InstallLocation` of the Epic launcher manifests that name the game.
-fn epic_candidates(probe: &dyn SystemProbe) -> Vec<PathBuf> {
+/// `InstallLocation` and `AppName` of the Epic launcher manifests that name the game.
+fn epic_candidates(probe: &dyn SystemProbe) -> Vec<(PathBuf, Option<String>)> {
     let Some(program_data) = probe.program_data_dir() else {
         return Vec::new();
     };
@@ -259,10 +310,76 @@ fn epic_candidates(probe: &dyn SystemProbe) -> Vec<PathBuf> {
             .is_some_and(|n| n.to_lowercase().contains(GAME_DISPLAY_NAME));
         let location = json.get("InstallLocation").and_then(|v| v.as_str());
         if let (true, Some(loc)) = (named, location.filter(|l| !l.trim().is_empty())) {
-            out.push(PathBuf::from(loc.trim()));
+            let app_name = json
+                .get("AppName")
+                .and_then(|v| v.as_str())
+                .map(|n| n.trim().to_owned());
+            out.push((PathBuf::from(loc.trim()), app_name));
         }
     }
     out
+}
+
+/// The Microsoft Store package registrations, below HKCU.
+const PACKAGES_KEY: &str = r"Software\Classes\Local Settings\Software\Microsoft\Windows\CurrentVersion\AppModel\Repository\Packages";
+/// Package name of the Microsoft Store version (unverified: no real install was available).
+const STORE_PACKAGE_PREFIX: &str = "GIANTSSoftware.FarmingSimulator25PC_";
+/// The `Application` id used when the package's manifest cannot be read.
+const STORE_FALLBACK_APP_ID: &str = "App";
+
+/// Package folders and `<PackageFamilyName>!<AppId>` of the Microsoft Store version, from its
+/// package registration. Unverified on a real install: only fixtures cover it.
+///
+/// A package full name is `Name_Version_Arch_ResourceId_PublisherId` and the family name is
+/// `Name_PublisherId`. The app id is the `Id` of the first `<Application>` in
+/// `AppxManifest.xml`, or `App` when that file cannot be read.
+fn store_candidates(probe: &dyn SystemProbe) -> Vec<(PathBuf, String)> {
+    let mut names: Vec<String> = probe
+        .registry_subkeys(Hive::CurrentUser, PACKAGES_KEY)
+        .into_iter()
+        .filter(|n| has_prefix_ignore_case(n, STORE_PACKAGE_PREFIX))
+        .collect();
+    names.sort();
+    let mut out = Vec::new();
+    for name in names {
+        let parts: Vec<&str> = name.split('_').collect();
+        let (Some(first), Some(publisher)) = (parts.first(), parts.last()) else {
+            continue;
+        };
+        if parts.len() < 5 {
+            continue;
+        }
+        let key = format!(r"{PACKAGES_KEY}\{name}");
+        let Some(root) = probe.registry_string(Hive::CurrentUser, &key, "PackageRootFolder") else {
+            continue;
+        };
+        let root = root.trim().trim_matches('"').trim();
+        if root.is_empty() {
+            continue;
+        }
+        let root = PathBuf::from(root);
+        let app_id = manifest_app_id(&root).unwrap_or_else(|| STORE_FALLBACK_APP_ID.to_owned());
+        out.push((root, format!("{first}_{publisher}!{app_id}")));
+    }
+    out
+}
+
+/// The `Id` of the first `<Application>` in `<root>\AppxManifest.xml`, if readable.
+fn manifest_app_id(root: &Path) -> Option<String> {
+    let bytes = fs::read(root.join("AppxManifest.xml")).ok()?;
+    let text = String::from_utf8_lossy(&bytes);
+    let text = text.trim_start_matches('\u{feff}');
+    let doc = roxmltree::Document::parse(text).ok()?;
+    doc.descendants()
+        .find(|n| n.is_element() && n.tag_name().name() == "Application")
+        .and_then(|n| n.attribute("Id"))
+        .map(str::to_owned)
+        .filter(|id| !id.is_empty())
+}
+
+fn has_prefix_ignore_case(text: &str, prefix: &str) -> bool {
+    text.get(..prefix.len())
+        .is_some_and(|head| head.eq_ignore_ascii_case(prefix))
 }
 
 /// `Documents\My Games\FarmingSimulator2025`, if it exists.
@@ -375,7 +492,7 @@ fn holds_a_mod(folder: &Path) -> bool {
 pub fn game_status(probe: &dyn SystemProbe, chosen: Option<&Path>) -> GameStatus {
     let install = find_installs(probe).into_iter().next();
     let store = install.as_ref().map(|i| i.store.to_model());
-    let launchable = install.is_some();
+    let launchable = install.as_ref().and_then(target_for).is_some();
     let game_version = install.and_then(|i| i.version);
     let run = running(probe);
     let (user, user_dir_source) = resolve_user_dir(probe, chosen);
@@ -403,8 +520,8 @@ pub fn game_status(probe: &dyn SystemProbe, chosen: Option<&Path>) -> GameStatus
     }
 }
 
-/// The user folder and how it was found: the chosen one, else detection ([`user_dir`]).
-/// WS-A adds the Microsoft Store package folder as a fallback.
+/// The user folder and how it was found: the chosen one, else detection ([`user_dir`]), else
+/// the Microsoft Store package's `LocalCache\Local` folder (unverified on a real install).
 fn resolve_user_dir(
     probe: &dyn SystemProbe,
     chosen: Option<&Path>,
@@ -412,10 +529,25 @@ fn resolve_user_dir(
     if let Some(dir) = chosen {
         return (Some(dir.to_path_buf()), UserDirSource::Chosen);
     }
-    match user_dir(probe) {
+    match user_dir(probe).or_else(|| store_user_dir(probe)) {
         Some(dir) => (Some(dir), UserDirSource::Detected),
         None => (None, UserDirSource::None),
     }
+}
+
+/// `%LOCALAPPDATA%\Packages\GIANTSSoftware.FarmingSimulator25PC_<id>\LocalCache\Local`, if it
+/// exists. When several packages match, the first by path.
+fn store_user_dir(probe: &dyn SystemProbe) -> Option<PathBuf> {
+    let packages = probe.local_app_data_dir()?.join("Packages");
+    let mut found: Vec<PathBuf> = fs::read_dir(packages)
+        .ok()?
+        .filter_map(Result::ok)
+        .filter(|e| has_prefix_ignore_case(&e.file_name().to_string_lossy(), STORE_PACKAGE_PREFIX))
+        .map(|e| e.path().join("LocalCache").join("Local"))
+        .filter(|p| p.is_dir())
+        .collect();
+    found.sort();
+    found.into_iter().next()
 }
 
 /// What the library needs to know about the game to scan and label profiles.
