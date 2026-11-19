@@ -32,6 +32,8 @@ import { switchBlockedReason } from '../switching/blocked';
 import { SetActiveButton } from '../switching/SetActiveButton';
 import { SwitchNotices } from '../switching/SwitchNotices';
 import type { SwitchingController } from '../switching/useSwitching';
+import { UpdatesPrompt } from '../updates/UpdatesPrompt';
+import type { UpdatesController } from '../updates/useUpdates';
 import type { CollectionProps } from './collection';
 import { Inspector } from './Inspector';
 import { kindOrder } from './labels';
@@ -71,6 +73,8 @@ export interface LibraryScreenProps {
   game: GameStatus | null;
   switching: SwitchingController;
   fileOps: FileOpsController;
+  /** Online updates: the first-run prompt, and the revision that says the lists changed. */
+  updates: UpdatesController;
   /** Opens Compare with this folder on the left. */
   onCompare: () => void;
 }
@@ -83,6 +87,7 @@ export function LibraryScreen({
   game,
   switching,
   fileOps,
+  updates,
   onCompare,
 }: LibraryScreenProps) {
   const [query, setQuery] = useState<LibraryQuery>(defaultQuery);
@@ -102,12 +107,14 @@ export function LibraryScreen({
   const meta = useModMeta(update);
   const openFolder = useActionError(profile.id);
 
-  // After a copy, move or remove ends, read the list again and swap it in place (no loading
-  // state, so the rows and the scroll position stay). A failed read keeps what is on screen.
-  const seenRevision = useRef(fileOps.revision);
+  // After a copy, move, remove or update ends, or an update check changes what the list shows,
+  // read the list again and swap it in place (no loading state, so the rows and the scroll
+  // position stay). A failed read keeps what is on screen.
+  const revision = fileOps.revision + updates.revision;
+  const seenRevision = useRef(revision);
   useEffect(() => {
-    if (fileOps.revision === seenRevision.current) return;
-    seenRevision.current = fileOps.revision;
+    if (revision === seenRevision.current) return;
+    seenRevision.current = revision;
     let current = true;
     api.listMods(profile.id).then(
       (fresh) => {
@@ -118,7 +125,16 @@ export function LibraryScreen({
     return () => {
       current = false;
     };
-  }, [fileOps.revision, profile.id, replace]);
+  }, [revision, profile.id, replace]);
+  // A source link was saved or removed in the Inspector: the same quiet re-read, at once.
+  const refreshMods = useCallback(
+    () =>
+      void api.listMods(profile.id).then(
+        (fresh) => replace(fresh),
+        () => undefined,
+      ),
+    [profile.id, replace],
+  );
   const allMods = state.status === 'ready' ? state.data : NO_MODS;
 
   const deferredQuery = useDeferredValue(query);
@@ -344,6 +360,7 @@ export function LibraryScreen({
           </div>
         </div>
 
+        <UpdatesPrompt className="mm-library__notice" updates={updates} />
         <SwitchNotices
           className="mm-library__notice"
           switching={switching}
@@ -425,6 +442,7 @@ export function LibraryScreen({
           meta={meta}
           overlay={narrow}
           onClose={closeInspector}
+          onLinksChanged={refreshMods}
         />
       )}
     </div>

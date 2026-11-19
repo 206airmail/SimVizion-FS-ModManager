@@ -36,8 +36,10 @@ mod meta;
 mod savegames;
 mod switching;
 mod transfer;
+mod updates;
 
 pub use transfer::OpEnv;
+pub use updates::UpdateEnv;
 #[cfg(test)]
 mod tests;
 
@@ -100,6 +102,8 @@ pub struct Library {
     /// The busy and cancel flags of savegame hashing (plan M6), apart from `transfer`'s so a
     /// hash run and a file operation never block each other.
     hashing: savegames::HashState,
+    /// The flag that keeps update requests to one at a time (plan M7).
+    updates: updates::NetState,
     #[cfg(test)]
     decodes: std::sync::atomic::AtomicUsize,
 }
@@ -115,6 +119,7 @@ impl Library {
             last_ctx: Mutex::new(None),
             transfer: transfer::TransferState::default(),
             hashing: savegames::HashState::default(),
+            updates: updates::NetState::default(),
             #[cfg(test)]
             decodes: std::sync::atomic::AtomicUsize::new(0),
         }
@@ -181,8 +186,9 @@ impl Library {
             })
             .collect();
 
-        // One query for every mod's tags and note.
+        // One query for every mod's tags, note and link, one for the update check's results.
         let meta = self.store.all_mod_meta()?;
+        let matches = self.store.catalog_matches()?;
 
         Ok(scan
             .records
@@ -200,6 +206,13 @@ impl Library {
                     entry.tags.clone_from(&meta.tags);
                     entry.note.clone_from(&meta.note);
                 }
+                // Source, links and update state depend on the user's link and the last check,
+                // never on the scan cache (plan M7).
+                updates::decorate(
+                    &mut entry,
+                    matches.get(&name),
+                    meta.get(&name).and_then(|m| m.source_url.as_deref()),
+                );
                 entry.icon = record
                     .icon
                     .as_ref()
@@ -436,7 +449,7 @@ impl Library {
 
     /// A profile's summary from a fresh scan. A missing folder has zero counts.
     fn summarize(&self, profile: &StoredProfile, ctx: &GameContext) -> Result<Profile, ApiError> {
-        let (mod_count, total_bytes, issue_count) =
+        let (mod_count, total_bytes, issue_count, update_count) =
             match self.scan_profile(profile, ctx, &no_progress) {
                 Ok(scan) => (
                     scan.records.len(),
@@ -445,8 +458,9 @@ impl Library {
                         .iter()
                         .filter(|r| !r.entry.issues.is_empty())
                         .count(),
+                    updates::count_available(&scan.records, &self.store.catalog_matches()?),
                 ),
-                Err(e) if e.code == ErrorCode::FolderMissing => (0, 0, 0),
+                Err(e) if e.code == ErrorCode::FolderMissing => (0, 0, 0, 0),
                 Err(e) => return Err(e),
             };
         let key = path_key(&profile.path);
@@ -460,7 +474,7 @@ impl Library {
             mod_count: u32::try_from(mod_count).unwrap_or(u32::MAX),
             total_bytes,
             issue_count: u32::try_from(issue_count).unwrap_or(u32::MAX),
-            update_count: 0,
+            update_count: u32::try_from(update_count).unwrap_or(u32::MAX),
         })
     }
 

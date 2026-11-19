@@ -182,6 +182,7 @@ mod tests {
                 also_in: Vec::new(),
                 tags: Vec::new(),
                 note: None,
+                links: Vec::new(),
             },
         }
     }

@@ -91,6 +91,7 @@ export function olderTwin(mod: ModEntry, profileId: string): ModEntry {
     alsoIn: [],
     tags: [],
     note: null,
+    links: [],
   };
 }
 

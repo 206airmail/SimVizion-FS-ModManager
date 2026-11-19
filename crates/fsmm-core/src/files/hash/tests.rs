@@ -100,3 +100,77 @@ fn a_missing_file_is_an_io_error_with_a_kind_not_a_path() {
         other => panic!("expected Io, got {other:?}"),
     }
 }
+
+// ---------------------------------------------------------------- sha256 (plan M7)
+
+fn sha_of(bytes: &[u8]) -> (String, u64) {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("FS25_Test.zip");
+    fs::write(&path, bytes).unwrap();
+    let mut total = 0;
+    let hash = sha256(&path, &mut |n| total += n, &AtomicBool::new(false)).unwrap();
+    (hash, total)
+}
+
+#[test]
+fn sha256_matches_the_known_vectors() {
+    assert_eq!(
+        sha_of(b"abc").0,
+        "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+    );
+    assert_eq!(
+        sha_of(b"").0,
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    );
+}
+
+#[test]
+fn sha256_of_several_chunks_matches_the_reference_and_reports_every_byte() {
+    let bytes: Vec<u8> = (0..(CHUNK * 2 + 777)).map(|i| (i % 253) as u8).collect();
+    let (hash, total) = sha_of(&bytes);
+    assert_eq!(hash, format!("{:x}", Sha256::digest(&bytes)));
+    assert_eq!(total, bytes.len() as u64);
+    assert_eq!(hash, hash.to_lowercase());
+    assert_eq!(hash.len(), 64);
+}
+
+#[test]
+fn sha256_does_not_salt_with_a_name() {
+    // The game's hash depends on the mod name; the catalog's does not.
+    let (plain, _) = sha_of(b"zip bytes");
+    assert_ne!(plain, hash_of(b"zip bytes", "FS25_Test").0);
+}
+
+#[test]
+fn sha256_cancels_between_chunks_and_before_the_start() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("FS25_Test.zip");
+    fs::write(&path, vec![1u8; CHUNK * 3]).unwrap();
+    let cancel = AtomicBool::new(false);
+    let mut chunks = 0;
+    let result = sha256(
+        &path,
+        &mut |_| {
+            chunks += 1;
+            cancel.store(true, Ordering::SeqCst);
+        },
+        &cancel,
+    );
+    assert!(matches!(result, Err(FileOpError::Cancelled)));
+    assert_eq!(chunks, 1);
+
+    let mut chunks = 0;
+    let result = sha256(&path, &mut |_| chunks += 1, &AtomicBool::new(true));
+    assert!(matches!(result, Err(FileOpError::Cancelled)));
+    assert_eq!(chunks, 0);
+}
+
+#[test]
+fn sha256_of_a_missing_file_is_an_io_error_with_a_kind_not_a_path() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("secret-name.zip");
+    match sha256(&path, &mut |_| {}, &AtomicBool::new(false)) {
+        Err(FileOpError::Io(kind)) => assert_eq!(kind, "NotFound"),
+        other => panic!("expected Io, got {other:?}"),
+    }
+}

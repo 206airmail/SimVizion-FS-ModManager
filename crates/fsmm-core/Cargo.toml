@@ -26,8 +26,15 @@ rusqlite = { version = "0.43.0", features = ["bundled"] }
 serde = { workspace = true }
 # Reads Epic Games launcher manifests (JSON).
 serde_json = { workspace = true }
+# SHA-256 for the update catalog (by-hash matching, verifying downloads against archiveSha256, M7).
+# 0.10 shares the digest 0.10 crate with md-5.
+sha2 = "0.10.9"
 # Generates the TypeScript side of the data contract from the Rust types.
 ts-rs = "12"
+# HTTPS for mod updates (M7): the SiloAPI catalog, GitHub releases and ModHub download links.
+# Blocking, which fits the blocking-command pattern; rustls, so no system TLS. Pinned to a release
+# at least two weeks old.
+ureq = { version = "=3.5.1", features = ["json"] }
 # Reads mod zips through the central directory. Minor version pinned: releases are frequent.
 # Only Deflate (pure-Rust zlib-rs backend) is enabled; real mods use only Deflate and Stored.
 zip = { version = "~9.7", default-features = false, features = ["deflate-flate2-zlib-rs"] }

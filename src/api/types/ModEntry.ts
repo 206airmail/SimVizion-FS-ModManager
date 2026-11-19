@@ -4,6 +4,7 @@ import type { ModFormat } from "./ModFormat";
 import type { ModIssue } from "./ModIssue";
 import type { ModKind } from "./ModKind";
 import type { ModSource } from "./ModSource";
+import type { SourceLink } from "./SourceLink";
 import type { UpdateState } from "./UpdateState";
 
 export type ModEntry = { 
@@ -34,4 +35,9 @@ tags: Array<string>,
 /**
  * The user's note for this mod name (shared by every profile).
  */
-note: string | null, };
+note: string | null, 
+/**
+ * Pages the mod can be opened on: the catalog's ModHub and GitHub pages, and the user's
+ * manual link.
+ */
+links: Array<SourceLink>, };

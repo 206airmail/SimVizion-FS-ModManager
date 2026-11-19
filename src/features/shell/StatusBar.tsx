@@ -4,16 +4,21 @@ import { strings } from '../../strings';
 import { cx } from '../../ui/cx';
 import { Pill } from '../../ui/Pill';
 import { Tooltip } from '../../ui/Tooltip';
+import { statusDot, statusText, type UpdateStatus } from '../updates/status';
 
 export interface StatusBarProps {
   game: GameStatus | null;
   /** True when the data on screen is generated sample data, not the user's folders. */
   sampleData: boolean;
+  /** What the update checks are doing; a click on its item opens Settings. */
+  updateStatus: UpdateStatus | null;
+  onOpenSettings: () => void;
 }
 
-/** Quiet operational state: what the app knows about the game right now. */
-export function StatusBar({ game, sampleData }: StatusBarProps) {
+/** Quiet operational state: what the app knows about the game and the update checks right now. */
+export function StatusBar({ game, sampleData, updateStatus, onOpenSettings }: StatusBarProps) {
   const t = strings.status;
+  const updatesHint = strings.updates.status.hint;
   return (
     <footer className="mm-statusbar">
       {game && (
@@ -51,6 +56,27 @@ export function StatusBar({ game, sampleData }: StatusBarProps) {
         </>
       )}
       <span className="mm-statusbar__spacer" />
+      {updateStatus !== null && (
+        <>
+          <Tooltip label={updatesHint}>
+            <button
+              type="button"
+              className="mm-statusbar__button"
+              aria-label={`${statusText(updateStatus)}. ${updatesHint}`}
+              onClick={onOpenSettings}
+            >
+              <span
+                className={cx(
+                  'sv-status-dot',
+                  statusDot(updateStatus) !== 'none' && `sv-status-dot--${statusDot(updateStatus)}`,
+                )}
+              />
+              {statusText(updateStatus)}
+            </button>
+          </Tooltip>
+          <span className="mm-statusbar__divider" />
+        </>
+      )}
       {sampleData && (
         <Tooltip label={strings.app.sampleDataHint}>
           <Pill size="compact">{strings.app.sampleData}</Pill>

@@ -2,8 +2,10 @@ import type {
   Api,
   ClashChoice,
   Comparison,
+  ErrorCode,
   GameStatus,
   HashProgress,
+  LinkKind,
   ModEntry,
   OpProgress,
   OpResult,
@@ -14,13 +16,18 @@ import type {
   SwitchResult,
   TransferMode,
   TransferPlan,
+  UpdateCheck,
+  UpdatePlan,
+  UpdateSettings,
 } from '..';
 import { validateProfileName } from '../../lib/profileName';
 import { ApiFailure } from '../../lib/errors';
+import { compareVersions } from '../../lib/version';
 import { compareMods } from './compare';
 import { GAME_DESC_VERSION } from './entry';
 import {
   cloneState,
+  findByName,
   findClashes,
   nameKey,
   removeMod,
@@ -32,6 +39,18 @@ import { allTags, normalizeNote, normalizeTags, seedMeta, withMeta } from './met
 import { createRng } from './prng';
 import { buildProfileMods, emptyRecipe, pickCopies, scaleRecipe, type Recipe } from './profile';
 import { buildReport, buildSaves, hashKey, pendingMods, type SaveDef } from './savegames';
+import {
+  buildCatalog,
+  linkUrl,
+  parseSourceLink,
+  presentMod,
+  seedLinks,
+  summarizeCheck,
+  updateOf,
+  type Catalog,
+  type CatalogEntry,
+  type ManualLink,
+} from './updates';
 
 export interface MockOptions {
   /** Adds a fourth profile "Stress Test" with exactly 5,000 mods. Default false. */
@@ -60,6 +79,18 @@ export interface MockOptions {
   brokenSave?: boolean;
   /** The game has no saves: listSavegames returns an empty list. Default false. */
   noSaves?: boolean;
+  /** Online updates start switched on, with a check from 40 minutes ago already cached. Default false. */
+  updatesOn?: boolean;
+  /** Checks fail with offline, and so do installs. Default false. */
+  offline?: boolean;
+  /** The first check that reaches the catalog is answered with rateLimited (retry in 5 minutes). Default false. */
+  rateLimited?: boolean;
+  /** Installs download fully, then fail with verifyFailed. Default false. */
+  hashMismatch?: boolean;
+  /** ModHub installs fail with notInstallable (the page has no download link). Default false. */
+  noModHubLink?: boolean;
+  /** Called when a mod link is "opened" (the mock opens nothing); for tests. */
+  onOpenLink?: (url: string, kind: LinkKind) => void;
 }
 
 /** The mock's newest settings backup, offered while `brokenSettings` is on. */
@@ -261,6 +292,12 @@ export function createMockApi(options: MockOptions = {}): Api {
     slowHash = false,
     brokenSave = false,
     noSaves = false,
+    updatesOn = false,
+    offline = false,
+    rateLimited = false,
+    hashMismatch = false,
+    noModHubLink = false,
+    onOpenLink,
   } = options;
   const wait = (): Promise<void> =>
     delayMs > 0 ? new Promise((resolve) => setTimeout(resolve, delayMs)) : Promise.resolve();
@@ -285,6 +322,29 @@ export function createMockApi(options: MockOptions = {}): Api {
   let saveDefs: SaveDef[] | null = null;
   const saves = (): SaveDef[] =>
     noSaves ? [] : (saveDefs ??= buildSaves(dataset(stress).mods, brokenSave));
+  // Online updates: the settings, the catalog (built on first use, shown only once a check has
+  // succeeded) and the user's own links, by lower-cased mod name.
+  let settings: UpdateSettings = {
+    enabled: updatesOn,
+    lastCheck: updatesOn ? new Date(Date.now() - 40 * 60_000).toISOString() : null,
+    retryAfter: null,
+  };
+  let checked = updatesOn;
+  let catalogMap: Map<string, CatalogEntry> | null = null;
+  const everyMod = (): ModEntry[] => [...state().mods.values()].flat();
+  const catalog = (): Map<string, CatalogEntry> => (catalogMap ??= buildCatalog(everyMod()));
+  const shownCatalog = (): Catalog | null => (settings.enabled && checked ? catalog() : null);
+  let manualLinks: Map<string, ManualLink> | null = null;
+  const links = (): Map<string, ManualLink> => (manualLinks ??= seedLinks(everyMod()));
+  const present = (mod: ModEntry): ModEntry =>
+    presentMod(withMeta(mod, meta), shownCatalog(), links());
+  const availableIn = (mods: readonly ModEntry[]): number => {
+    const shown = shownCatalog();
+    if (shown === null) return 0;
+    return mods.filter(
+      (mod) => updateOf(mod, shown.get(nameKey(mod.modName)) ?? null).type === 'available',
+    ).length;
+  };
   const hashed = new Set<string>();
   let hashing = false;
   let hashCancelRequested = false;
@@ -662,6 +722,157 @@ export function createMockApi(options: MockOptions = {}): Api {
       await wait();
       return allTags(meta);
     },
+    async getUpdateSettings(): Promise<UpdateSettings> {
+      await wait();
+      return { ...settings };
+    },
+    async setUpdatesEnabled(enabled: boolean): Promise<UpdateSettings> {
+      await wait();
+      settings = { ...settings, enabled };
+      return { ...settings };
+    },
+    /**
+     * Same order as the core: refused when off, then a stored retry-after, then the cache (3 h, or
+     * 60 s with `force`), then the "network" (about 1 s). The first check that gets through fills
+     * the catalog; before it, `listMods` shows no update state.
+     */
+    async checkForUpdates(force: boolean): Promise<UpdateCheck> {
+      if (!settings.enabled) throw new ApiFailure('updatesDisabled');
+      const now = Date.now();
+      if (settings.retryAfter !== null && Date.parse(settings.retryAfter) > now) {
+        throw new ApiFailure('rateLimited', settings.retryAfter);
+      }
+      if (checked && settings.lastCheck !== null) {
+        const age = now - Date.parse(settings.lastCheck);
+        if (age < (force ? 60_000 : 3 * 3_600_000)) {
+          return summarizeCheck(everyMod(), catalog(), settings.lastCheck, true);
+        }
+      }
+      await pause(1000);
+      if (offline) throw new ApiFailure('offline');
+      if (rateLimited) {
+        const retryAfter = new Date(Date.now() + 5 * 60_000).toISOString();
+        settings = { ...settings, retryAfter };
+        throw new ApiFailure('rateLimited', retryAfter);
+      }
+      checked = true;
+      const checkedAt = new Date().toISOString();
+      settings = { ...settings, lastCheck: checkedAt, retryAfter: null };
+      return summarizeCheck(everyMod(), catalog(), checkedAt, false);
+    },
+    async planUpdate(modName: string): Promise<UpdatePlan> {
+      await wait();
+      const shown = shownCatalog();
+      const entry = shown?.get(nameKey(modName));
+      const holders = state().profiles.flatMap((profile) => {
+        const mod = findByName(state().mods.get(profile.id) ?? [], modName);
+        return mod ? [{ profileId: profile.id, modId: mod.id, version: mod.version }] : [];
+      });
+      const behind = holders.some(
+        (folder) => compareVersions(entry?.latest ?? '', folder.version) > 0,
+      );
+      if (!entry || !entry.installable || !behind) throw new ApiFailure('notInstallable');
+      return { modName, toVersion: entry.latest, source: entry.install, folders: holders };
+    },
+    /**
+     * Folder by folder, like the core: the first ticked folder "downloads" and verifies (about
+     * 1.5 s), the others are filled from it (about 0.4 s each). Results are named by profile id.
+     */
+    async installUpdate(
+      modName: string,
+      profileIds: string[],
+      onProgress?: (progress: OpProgress) => void,
+    ): Promise<OpResult> {
+      if (!settings.enabled) throw new ApiFailure('updatesDisabled');
+      return exclusive(async () => {
+        const entry = shownCatalog()?.get(nameKey(modName));
+        const result: OpResult = { done: [], skipped: [], failed: [] };
+        const work: { profileId: string; mod: ModEntry }[] = [];
+        for (const profileId of profileIds) {
+          const mod = findByName(state().mods.get(profileId) ?? [], modName);
+          if (!entry || !mod) result.failed.push({ modName: profileId, code: 'targetChanged' });
+          else if (compareVersions(mod.version, entry.latest) >= 0) result.skipped.push(profileId);
+          else work.push({ profileId, mod });
+        }
+        if (!entry || work.length === 0) return result;
+
+        const newSize = (mod: ModEntry) => Math.round(mod.sizeBytes * 1.04);
+        const totalBytes = work.reduce((sum, item) => sum + newSize(item.mod), 0);
+        const emit = (doneBytes: number, doneItems: number, current: string | null) =>
+          onProgress?.({ doneBytes, totalBytes, current, doneItems, totalItems: work.length });
+        const failRest = (from: number, code: ErrorCode) => {
+          for (const item of work.slice(from)) {
+            result.failed.push({ modName: item.profileId, code });
+          }
+        };
+
+        emit(0, 0, null);
+        if (offline) {
+          await pause(TICK_MS * 4);
+          failRest(0, 'offline');
+          return result;
+        }
+        if (noModHubLink && entry.install === 'modHub') {
+          await pause(TICK_MS * 4);
+          failRest(0, 'notInstallable');
+          return result;
+        }
+
+        let doneBytes = 0;
+        for (const [index, item] of work.entries()) {
+          if (cancelRequested) {
+            failRest(index, 'cancelled');
+            break;
+          }
+          const size = newSize(item.mod);
+          emit(doneBytes, index, item.mod.fileName);
+          const finished = await stream(
+            size,
+            (bytes) => emit(doneBytes + bytes, index, item.mod.fileName),
+            index === 0 ? 30 : 8,
+          );
+          if (!finished) {
+            failRest(index, 'cancelled');
+            break;
+          }
+          // The download is checked once, before anything is replaced.
+          if (index === 0 && hashMismatch) {
+            failRest(0, 'verifyFailed');
+            break;
+          }
+          if (recycleRefused(index, work.length)) {
+            result.failed.push({ modName: item.profileId, code: 'recycleUnavailable' });
+            continue;
+          }
+          item.mod.version = entry.latest;
+          item.mod.sizeBytes = size;
+          item.mod.modified = new Date().toISOString();
+          doneBytes += size;
+          result.done.push(item.profileId);
+        }
+        settle(state());
+        emit(doneBytes, result.done.length, null);
+        return result;
+      });
+    },
+    async openModLink(modName: string, kind: LinkKind): Promise<void> {
+      await wait();
+      const key = nameKey(modName);
+      const url = linkUrl(shownCatalog()?.get(key) ?? null, links().get(key) ?? null, kind);
+      if (url === null) throw new ApiFailure('folderMissing');
+      onOpenLink?.(url, kind);
+    },
+    async setSourceLink(modName: string, url: string | null): Promise<string | null> {
+      await wait();
+      const key = nameKey(modName);
+      if (url === null) {
+        links().delete(key);
+        return null;
+      }
+      const link = parseSourceLink(url);
+      links().set(key, link);
+      return link.host;
+    },
     async getGameStatus(): Promise<GameStatus> {
       await wait();
       // The game's default folder means the override is off; an unreadable file tells us nothing.
@@ -682,6 +893,7 @@ export function createMockApi(options: MockOptions = {}): Api {
       return state().profiles.map((p) => ({
         ...p,
         isActive: !settingsBroken && p.id === activeId,
+        updateCount: availableIn(state().mods.get(p.id) ?? []),
       }));
     },
     async listMods(
@@ -692,7 +904,7 @@ export function createMockApi(options: MockOptions = {}): Api {
         await wait();
         throw new ApiFailure('folderUnreadable');
       }
-      const mods = (state().mods.get(profileId) ?? []).map((mod) => withMeta(mod, meta));
+      const mods = (state().mods.get(profileId) ?? []).map(present);
       // Spread the delay over a few steps, each reporting how much has been "read" so far.
       for (let step = 1; step <= PROGRESS_STEPS; step++) {
         await new Promise((resolve) => setTimeout(resolve, delayMs / PROGRESS_STEPS));

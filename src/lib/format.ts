@@ -58,6 +58,15 @@ export function formatDateTime(iso: string, locale?: string, timeZone?: string):
   }).format(date);
 }
 
+/** Time of day of an ISO 8601 timestamp in the user's local clock, such as "10:42". */
+export function formatTime(iso: string, locale?: string, timeZone?: string): string {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return iso;
+  return new Intl.DateTimeFormat(locale, { hour: 'numeric', minute: '2-digit', timeZone }).format(
+    date,
+  );
+}
+
 /** Shortens a path to its last segments, keeping the separator style it came with. */
 export function tailPath(path: string, keep = 2): string {
   const separator = path.includes('\\') ? '\\' : '/';

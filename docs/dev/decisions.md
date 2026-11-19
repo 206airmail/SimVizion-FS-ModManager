@@ -113,3 +113,37 @@ Why: on the user's 100% scaled (96 DPI) monitors, 16px outline icons have too fe
 ## 2026-11-19: M6 — savegames are read by mod name; DLCs are the only special case
 
 Why: the game matches a save's mods by `modName` only (the zip name without `.zip`), so the report does too. Version and the game's own `fileHash` (`md5(zip ++ modName)`, verified on real files) are extra information the game never enforces for a single-player load. DLCs (`pdlc_<name>`) are checked against `<install>\pdlc\<name>.dlc`. Nothing else is built in: in 1.25.1.0 the game's `internalMods` list is empty, and `FS25_precisionFarming` (which gets game-supplied scripts) is an ordinary zip in the mods folder. Only `careerSavegame.xml` is read, never written; `farms.xml` and the other save files are not opened. Rejected: a "game content" state (nothing qualifies); reading backups (later).
+
+## 2026-11-19: M7 — update checks go through SiloAPI only, opt-in and rate-aware
+
+Why: SiloAPI is a free, public, rate-limited service (300 requests a minute per IP), and its terms forbid overwhelming it. Nothing goes online until the user turns updates on. A check batches every mod name into `POST /mods/lookup` (500 a request), and the zips no name explains into `POST /mods/by-hash` (whole-zip SHA-256, 100 a request). Requests go one at a time. The answers are cached for 3 hours (in `cache.sqlite` `catalog_matches`), "Check now" is debounced to 60 s, and a 429 stores `retry_after` with no retry loop. The real library (599 names) took 6 requests. All network code is in `fsmm-core::net` behind the `Catalog` and `Web` traits:
+
+- one `ureq` agent, with timeouts and no proxy;
+- `https` only;
+- a host allow-list checked on every redirect hop;
+- capped bodies.
+
+Rejected: checking on every start; per-mod requests; a manual catalog search (fingerprints cover renamed zips).
+
+## 2026-11-19: M7 — updates install only under the installed file name, through the M5 write path
+
+Why: the game identifies a mod by its zip name, so an asset under another name would be a different mod. In that case the app offers the mod's page instead.
+
+- **The download:** streamed to a hidden staging file in the target folder.
+- **The checks:** it opens as a zip, has a `modDesc.xml`, and its version is at least the catalog's. Also its SHA-256 against the catalog's `archiveSha256` when that is for the same version, and its size against the ModHub page's "Size" row (1024-based, within 5%).
+- **The replace:** the old zip goes to the Recycle Bin just before the rename, and other folders are filled from the verified file.
+- **Every step:** journaled in `file_ops` (`recycle`, `update`) and refused while the game or the dedicated server runs.
+
+Rejected: renaming the download; Silo's `.old` side-by-side swap.
+
+## 2026-11-19: M7 — ModHub through its public page, not the game's downloader
+
+Why: the game's own ModHub downloader is native code in the game's `.exe`, and GIANTS' Terms of Use (§3.4) forbid reverse engineering it. Each mod page on farming-simulator.com has a public DOWNLOAD link to GIANTS' CDN. The app fetches the page only when the user clicks Update. It takes the one link whose host, path, 8-digit mod id and file name all fit, and never guesses. The CDN serves a file only to a request that comes from its mod page (403 otherwise), so the download sends that page as `Referer`, as a browser does when the user clicks DOWNLOAD. `Web::download` refuses any referer that is not an allowed mod page.
+
+Rejected: copying the game's protocol; guessing CDN URLs from the mod id.
+
+## 2026-11-19: M7 — URLs never cross IPC; manual links are reference only
+
+Why: an IPC call that opens any URL it is given would let any script in the webview open arbitrary pages. The frontend asks `openModLink(modName, kind)`, and the core reads the URL from the catalog cache or the user's stored link, opening only `http` and `https`. Manual source links (KingMods, itch.io, forums) are stored per lower-cased mod name in `library.sqlite` `mod_meta.source_url` and survive rescans, copies and updates. They get no update checks, because those sites have no catalog.
+
+Rejected: passing URLs to the opener plugin from the frontend; scraping third-party mod sites.

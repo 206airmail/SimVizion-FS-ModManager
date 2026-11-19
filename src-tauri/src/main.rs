@@ -6,6 +6,7 @@ mod insight;
 mod switching;
 mod thumbs;
 mod transfer;
+mod updates;
 
 use std::fs;
 use std::path::PathBuf;
@@ -67,6 +68,13 @@ fn main() {
             insight::set_tags,
             insight::set_note,
             insight::list_tags,
+            updates::get_update_settings,
+            updates::set_updates_enabled,
+            updates::check_for_updates,
+            updates::plan_update,
+            updates::install_update,
+            updates::open_mod_link,
+            updates::set_source_link,
         ])
         .run(tauri::generate_context!())
         .expect("error while running SimVizion Mod Manager");
