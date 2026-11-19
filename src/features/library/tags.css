@@ -1,0 +1,152 @@
+/* Tags and notes: the tag filter, the quiet mark in rows and cards, and the inspector's editors. */
+
+.mm-library__tag {
+  width: 164px;
+}
+/* On a card the sign sits on the artwork, top left, on its own surface like the status marks. */
+.mm-card__tagmark {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  display: flex;
+  padding: 2px 6px;
+  border-radius: var(--sv-radius-control);
+  background: var(--sv-panel);
+}
+
+/* The quiet tag and note sign in a row or card. */
+.mm-tagmark {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  color: var(--sv-text-muted);
+  font-size: 12px;
+}
+.mm-tagmark__item {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.mm-tags {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.mm-tags__chips,
+.mm-tags__suggest {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.mm-tags__none {
+  margin: 0;
+  color: var(--sv-text-muted);
+}
+.mm-tags__field {
+  display: flex;
+  gap: 6px;
+}
+.mm-tags__input {
+  flex: 1;
+  min-width: 0;
+}
+.mm-tags__input[aria-invalid='true'] {
+  border-color: var(--sv-error);
+}
+
+/* A tag: a pill-sized chip. The remove button is part of it; hover and focus show on the button. */
+.mm-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 24px;
+  max-width: 100%;
+  padding: 0 2px 0 8px;
+  border: 1px solid var(--sv-border);
+  border-radius: var(--sv-radius-control);
+  background: var(--sv-elevated);
+  color: var(--sv-text);
+  font: 500 12px var(--sv-font);
+}
+.mm-tag__name {
+  min-width: 0;
+}
+.mm-tag__count {
+  flex: none;
+  color: var(--sv-text-muted);
+  font-size: 11px;
+}
+.mm-tag__remove {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--sv-text-secondary);
+  cursor: pointer;
+}
+.mm-tag__remove:hover {
+  background: var(--sv-hover-bg);
+  color: var(--sv-text);
+}
+.mm-tag__remove:focus-visible {
+  outline: none;
+  border-color: var(--sv-teal);
+}
+
+/* An existing tag offered for one press: dashed, with a plus instead of a remove button. */
+.mm-tag--suggest {
+  padding: 0 8px 0 6px;
+  border-style: dashed;
+  background: transparent;
+  color: var(--sv-text-secondary);
+  cursor: pointer;
+}
+.mm-tag--suggest:hover {
+  border-color: var(--sv-hover-border);
+  background: var(--sv-hover-bg);
+  color: var(--sv-text);
+}
+.mm-tag--suggest:focus-visible {
+  outline: none;
+  border-color: var(--sv-teal);
+}
+
+.mm-inspector__meta-failure {
+  margin-top: 8px;
+}
+
+.mm-note {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.mm-note__input {
+  height: auto;
+  min-height: 84px;
+  padding: 6px 8px;
+  line-height: 1.4;
+  resize: vertical;
+}
+.mm-note__status {
+  min-height: 18px;
+  color: var(--sv-text-secondary);
+  font-size: 12px;
+}
+.mm-note__hint {
+  color: var(--sv-text-muted);
+}
+.mm-note__saved {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}

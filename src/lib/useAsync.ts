@@ -24,6 +24,8 @@ export function useAsync<T, P = never>(
   reload: () => void;
   /** Replaces the loaded data without showing the loading state. */
   replace: (data: T) => void;
+  /** Changes the loaded data in place (no loading state); does nothing until it is loaded. */
+  update: (change: (data: T) => T) => void;
 } {
   const [attempt, setAttempt] = useState(0);
   const [settled, setSettled] = useState<{
@@ -60,6 +62,18 @@ export function useAsync<T, P = never>(
     (data: T) => setSettled({ load, attempt, result: { status: 'ready', data } }),
     [load, attempt],
   );
+  const update = useCallback(
+    (change: (data: T) => T) =>
+      setSettled((previous) =>
+        previous !== null &&
+        previous.load === load &&
+        previous.attempt === attempt &&
+        previous.result.status === 'ready'
+          ? { ...previous, result: { status: 'ready', data: change(previous.result.data) } }
+          : previous,
+      ),
+    [load, attempt],
+  );
   const isCurrent = settled !== null && settled.load === load && settled.attempt === attempt;
   const isReportCurrent =
     reported !== null && reported.load === load && reported.attempt === attempt;
@@ -68,5 +82,6 @@ export function useAsync<T, P = never>(
     progress: isReportCurrent ? reported.value : null,
     reload,
     replace,
+    update,
   };
 }

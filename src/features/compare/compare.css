@@ -1,0 +1,135 @@
+/* Compare screen: two folder pickers over one merged table. The panel head reuses the library's
+   title row and toolbar classes (mm-library__*): same layout, same density. */
+
+.mm-compare {
+  min-width: 0;
+}
+
+/* ---------- Pickers ---------- */
+.mm-compare__pickers {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 0 12px 8px;
+}
+.mm-compare__picker {
+  flex: 1 1 0;
+  min-width: 0;
+  max-width: 320px;
+}
+
+/* ---------- Footer: selection and the four transfer actions ---------- */
+.mm-compare__footer {
+  flex-wrap: wrap;
+}
+.mm-compare__status {
+  color: var(--sv-text-secondary);
+  font-size: 12px;
+  white-space: nowrap;
+}
+.mm-compare__status strong {
+  color: var(--sv-text);
+  font-size: 13px;
+  font-weight: 600;
+}
+.mm-compare__spacer {
+  flex: 1;
+}
+
+/* ---------- Table ---------- */
+.mm-cmp {
+  container-type: inline-size;
+}
+.mm-cmp__sticky {
+  position: sticky;
+  z-index: 2;
+  top: 0;
+}
+.mm-cmp__body {
+  position: relative;
+}
+.mm-cmp__cols {
+  grid-template-columns: minmax(180px, 1fr) 88px 76px 108px 88px 76px 108px 148px;
+}
+.mm-cmp__row {
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 0;
+}
+.mm-cmp:focus-visible .mm-cmp__row.is-cursor {
+  outline: 1px solid var(--sv-teal);
+  outline-offset: -1px;
+}
+
+/* The folder names above their three columns. */
+.mm-cmp__groups {
+  display: grid;
+  height: 28px;
+  background: var(--sv-elevated);
+  color: var(--sv-text-secondary);
+  font-size: 12px;
+}
+.mm-cmp__group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 0 12px;
+}
+.mm-cmp__group--left {
+  grid-column: 2 / span 3;
+}
+.mm-cmp__group--right {
+  grid-column: 5 / span 3;
+}
+.mm-cmp__group--left,
+.mm-cmp__group--right {
+  color: var(--sv-text);
+  font-weight: 600;
+}
+.mm-cmp__side-tag {
+  flex: none;
+  color: var(--sv-text-muted);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+/* A quiet divider where each folder's columns start. */
+.mm-cmp__group--left,
+.mm-cmp__group--right,
+.mm-cmp__c-l-version,
+.mm-cmp__c-r-version {
+  border-left: 1px solid var(--sv-border);
+}
+
+.mm-cmp__end {
+  text-align: right;
+}
+.mm-cmp__none {
+  color: var(--sv-text-muted);
+}
+.mm-cmp__c-state {
+  display: flex;
+  align-items: center;
+}
+
+/* The dates leave first as the table narrows; the title keeps its room. */
+@container (max-width: 820px) {
+  .mm-cmp__cols {
+    grid-template-columns: minmax(180px, 1fr) 84px 72px 84px 72px 148px;
+  }
+  .mm-cmp__c-l-date,
+  .mm-cmp__c-r-date {
+    display: none;
+  }
+  .mm-cmp__group--left {
+    grid-column: 2 / span 2;
+  }
+  .mm-cmp__group--right {
+    grid-column: 4 / span 2;
+  }
+}

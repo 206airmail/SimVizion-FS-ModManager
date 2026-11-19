@@ -1,5 +1,6 @@
 import {
   FolderOpen,
+  GitCompareArrows,
   LayoutGrid,
   List,
   PackageOpen,
@@ -36,6 +37,8 @@ import { Inspector } from './Inspector';
 import { kindOrder } from './labels';
 import { ModGrid } from './ModGrid';
 import { ModTable } from './ModTable';
+import { tagCounts } from './tags';
+import { useModMeta } from './useModMeta';
 import {
   countByKind,
   defaultQuery,
@@ -68,11 +71,20 @@ export interface LibraryScreenProps {
   game: GameStatus | null;
   switching: SwitchingController;
   fileOps: FileOpsController;
+  /** Opens Compare with this folder on the left. */
+  onCompare: () => void;
 }
 
 const t = strings.library;
 
-export function LibraryScreen({ profile, profiles, game, switching, fileOps }: LibraryScreenProps) {
+export function LibraryScreen({
+  profile,
+  profiles,
+  game,
+  switching,
+  fileOps,
+  onCompare,
+}: LibraryScreenProps) {
   const [query, setQuery] = useState<LibraryQuery>(defaultQuery);
   const [view, setView] = useState<View>('list');
   // The docked preference and the temporary drawer are separate, so a narrow window
@@ -86,7 +98,8 @@ export function LibraryScreen({ profile, profiles, game, switching, fileOps }: L
     (report: Report<ScanProgress>) => api.listMods(profile.id, report),
     [profile.id],
   );
-  const { state, progress, reload, replace } = useAsync(load);
+  const { state, progress, reload, replace, update } = useAsync(load);
+  const meta = useModMeta(update);
   const openFolder = useActionError(profile.id);
 
   // After a copy, move or remove ends, read the list again and swap it in place (no loading
@@ -109,7 +122,18 @@ export function LibraryScreen({ profile, profiles, game, switching, fileOps }: L
   const allMods = state.status === 'ready' ? state.data : NO_MODS;
 
   const deferredQuery = useDeferredValue(query);
-  const mods = useMemo(() => queryMods(allMods, deferredQuery), [allMods, deferredQuery]);
+  // The tags in this folder, with how many mods have each. A filter on a tag nothing has any more
+  // (its last mod was untagged) is dropped, not left to show an empty list.
+  const tags = useMemo(() => tagCounts(allMods), [allMods]);
+  const activeTag = tags.some(
+    (entry) => entry.tag.toLowerCase() === deferredQuery.tag.toLowerCase(),
+  )
+    ? deferredQuery.tag
+    : '';
+  const mods = useMemo(
+    () => queryMods(allMods, { ...deferredQuery, tag: activeTag }),
+    [allMods, deferredQuery, activeTag],
+  );
   const order = useMemo(() => mods.map((mod) => mod.id), [mods]);
   const kindCounts = useMemo(() => countByKind(allMods), [allMods]);
   const statusCounts = useMemo(
@@ -190,7 +214,19 @@ export function LibraryScreen({ profile, profiles, game, switching, fileOps }: L
       hint: formatCount(kindCounts[kind]),
     })),
   ];
-  const filtered = query.search.trim() !== '' || query.kind !== 'all' || query.status !== 'all';
+  const tagOptions: SelectOption<string>[] = [
+    { value: '', label: t.tagAll },
+    ...tags.map((entry) => ({
+      value: entry.tag,
+      label: entry.tag,
+      hint: formatCount(entry.count),
+    })),
+  ];
+  const filtered =
+    query.search.trim() !== '' ||
+    query.kind !== 'all' ||
+    query.status !== 'all' ||
+    activeTag !== '';
   const ready = state.status === 'ready';
 
   return (
@@ -213,6 +249,13 @@ export function LibraryScreen({ profile, profiles, game, switching, fileOps }: L
                 onPress={() => void switching.setActive(profile)}
               />
             )}
+            <IconButton
+              icon={GitCompareArrows}
+              label={t.compare}
+              size="standard"
+              disabled={profiles.length < 2}
+              onClick={onCompare}
+            />
             <IconButton
               icon={FolderOpen}
               label={t.openFolder}
@@ -242,6 +285,17 @@ export function LibraryScreen({ profile, profiles, game, switching, fileOps }: L
                 options={kindOptions}
                 onChange={(kind) => setQuery((current) => ({ ...current, kind }))}
               />
+              {tags.length > 0 && (
+                <Select
+                  className="mm-library__tag"
+                  size="compact"
+                  label={t.tagLabel}
+                  prefix={t.tagPrefix}
+                  value={activeTag}
+                  options={tagOptions}
+                  onChange={(tag) => setQuery((current) => ({ ...current, tag }))}
+                />
+              )}
               <SegmentedControl<StatusFilter>
                 label={t.statusLabel}
                 value={query.status}
@@ -330,7 +384,13 @@ export function LibraryScreen({ profile, profiles, game, switching, fileOps }: L
               filtered && (
                 <Button
                   onClick={() =>
-                    setQuery((current) => ({ ...current, search: '', kind: 'all', status: 'all' }))
+                    setQuery((current) => ({
+                      ...current,
+                      search: '',
+                      kind: 'all',
+                      status: 'all',
+                      tag: '',
+                    }))
                   }
                 >
                   {strings.states.clearFilters}
@@ -362,6 +422,7 @@ export function LibraryScreen({ profile, profiles, game, switching, fileOps }: L
           profiles={profiles}
           game={game}
           fileOps={fileOps}
+          meta={meta}
           overlay={narrow}
           onClose={closeInspector}
         />

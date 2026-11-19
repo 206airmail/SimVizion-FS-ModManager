@@ -3,10 +3,12 @@ import { useCallback, useState } from 'react';
 import type { Profile } from './api';
 import { api } from './api/client';
 import { ActionErrorBanner } from './features/ActionErrorBanner';
+import { CompareScreen } from './features/compare/CompareScreen';
 import { FileOpsNotices } from './features/files/FileOpsNotices';
 import { useFileOps } from './features/files/useFileOps';
 import { Gallery } from './features/gallery/Gallery';
 import { LibraryScreen } from './features/library/LibraryScreen';
+import { SavegamesScreen } from './features/savegames/SavegamesScreen';
 import { AppHeader } from './features/shell/AppHeader';
 import { ProfileRail, type ProfileActions, type Section } from './features/shell/ProfileRail';
 import { StatusBar } from './features/shell/StatusBar';
@@ -39,6 +41,8 @@ function Workspace() {
   const runAddFolder = addFolder.run;
   const [section, setSection] = useState<Section>('library');
   const [chosenProfileId, setChosenProfileId] = useState<string | null>(null);
+  // The folder on the left when Compare opens ("Compare with…" on a profile, or the shown one).
+  const [compareLeftId, setCompareLeftId] = useState<string | null>(null);
 
   // After a write to gameSettings.xml: fresh profiles (the ACTIVE marks) and game status. Neither
   // read may fail the write that already succeeded, so this never rejects.
@@ -63,6 +67,11 @@ function Workspace() {
     },
     [clearSwitching],
   );
+
+  const openCompare = useCallback((leftId: string | null) => {
+    setCompareLeftId(leftId);
+    setSection('compare');
+  }, []);
 
   const addProfile = useCallback(
     () =>
@@ -89,6 +98,7 @@ function Workspace() {
   // file operation does gate removal, which might take away a folder it is working in.
   const operationRunning = fileOps.running !== null;
   const profileActions: ProfileActions = {
+    compareWith: (target) => openCompare(target.id),
     rename: async (target, name) => {
       await api.renameProfile(target.id, name);
       await reloadAfterWrite();
@@ -121,7 +131,9 @@ function Workspace() {
           selectedProfileId={profile?.id ?? null}
           section={section}
           onSelectProfile={selectProfile}
-          onSelectSection={setSection}
+          onSelectSection={(next) =>
+            next === 'compare' ? openCompare(profile?.id ?? null) : setSection(next)
+          }
           onAddFolder={() => void addProfile()}
           profileActions={profileActions}
         />
@@ -146,6 +158,26 @@ function Workspace() {
                 action={<Button onClick={reload}>{strings.states.retry}</Button>}
               />
             </main>
+          ) : section === 'compare' ? (
+            <main className="mm-main">
+              <CompareScreen
+                // Opening Compare from another profile starts it over with that profile on the left.
+                key={compareLeftId ?? ''}
+                profiles={profiles}
+                initialLeftId={compareLeftId}
+                game={game}
+                fileOps={fileOps}
+              />
+            </main>
+          ) : section === 'savegames' ? (
+            <main className="mm-main">
+              <SavegamesScreen
+                profiles={profiles}
+                defaultProfileId={activeProfile?.id ?? null}
+                game={game}
+                fileOps={fileOps}
+              />
+            </main>
           ) : section !== 'library' ? (
             <main className="sv-panel">
               <EmptyState
@@ -167,6 +199,7 @@ function Workspace() {
                 game={game}
                 switching={switching}
                 fileOps={fileOps}
+                onCompare={() => openCompare(profile.id)}
               />
             </main>
           ) : (
