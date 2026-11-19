@@ -1,15 +1,28 @@
 import type {
   Api,
+  ClashChoice,
   GameStatus,
   ModEntry,
+  OpProgress,
   OpResult,
   Profile,
   ScanProgress,
   SwitchResult,
+  TransferMode,
   TransferPlan,
 } from '..';
+import { validateProfileName } from '../../lib/profileName';
 import { ApiFailure } from '../../lib/errors';
 import { GAME_DESC_VERSION } from './entry';
+import {
+  cloneState,
+  findClashes,
+  nameKey,
+  removeMod,
+  settle,
+  transferMod,
+  type MockState,
+} from './files';
 import { createRng } from './prng';
 import { buildProfileMods, emptyRecipe, pickCopies, scaleRecipe, type Recipe } from './profile';
 
@@ -28,6 +41,12 @@ export interface MockOptions {
   brokenSettings?: boolean;
   /** setActiveProfile rejects with a writeFailed ApiFailure. Default false. */
   writeFails?: boolean;
+  /** Every transfer plan has clashes: the target gets an older twin of every other mod. Default false. */
+  clashes?: boolean;
+  /** Remove and Replace fail with recycleUnavailable for some mods, and the rest succeed. Default false. */
+  recycleFails?: boolean;
+  /** Plans show too little free space on the target drive, and moves count as cross-drive. Default false. */
+  lowSpace?: boolean;
 }
 
 /** The mock's newest settings backup, offered while `brokenSettings` is on. */
@@ -36,6 +55,11 @@ export const MOCK_BACKUP_AT = '2026-11-17T18:42:00Z';
 /** The profile that is active at start, and the one whose folder is the game's default. */
 const INITIAL_ACTIVE_ID = 'testing';
 const DEFAULT_PROFILE_ID = 'main';
+
+/** A plan made by planTransfer and waiting for executeTransfer. */
+interface StoredPlan {
+  plan: TransferPlan;
+}
 
 interface MockOp {
   id: string;
@@ -46,6 +70,17 @@ interface MockOp {
 
 /** How many progress events a mock listMods emits across its delay. */
 const PROGRESS_STEPS = 5;
+
+/**
+ * Copy speed of the mock: 2 MiB every 50 ms (about 40 MB/s), in 5 to 200 steps. A big mod takes
+ * several seconds, so Cancel can be tried; a small one still shows movement.
+ */
+const TICK_MS = 50;
+const BYTES_PER_TICK = 2 * 1024 * 1024;
+const MIN_TICKS = 5;
+const MAX_TICKS = 200;
+/** Free space the mock reports for the target drive. */
+const FREE_BYTES = 48 * 1024 ** 3;
 
 const MODS_ROOT = 'C:\\Users\\Player\\Documents\\My Games\\FarmingSimulator2025';
 
@@ -190,16 +225,71 @@ export function createMockApi(options: MockOptions = {}): Api {
     serverRunning = false,
     brokenSettings = false,
     writeFails = false,
+    clashes: guaranteeClashes = false,
+    recycleFails = false,
+    lowSpace = false,
   } = options;
   const wait = (): Promise<void> =>
     delayMs > 0 ? new Promise((resolve) => setTimeout(resolve, delayMs)) : Promise.resolve();
 
-  // Switching state lives in this instance; the shared dataset is never mutated.
+  // Switching state and the folders live in this instance; the shared dataset is never mutated.
   let activeId: string | null = INITIAL_ACTIVE_ID;
   let settingsBroken = brokenSettings;
   const ops: MockOp[] = [];
-  const pathOf = (id: string | null) =>
-    dataset(stress).profiles.find((p) => p.id === id)?.path ?? null;
+  let folders: MockState | null = null;
+  const state = (): MockState => (folders ??= cloneState(dataset(stress)));
+  const pathOf = (id: string | null) => state().profiles.find((p) => p.id === id)?.path ?? null;
+
+  // File operations: plans wait here for execute, and one operation runs at a time.
+  const plans = new Map<string, StoredPlan>();
+  let planCount = 0;
+  let running = false;
+  let cancelRequested = false;
+  const pause = (ms: number): Promise<void> =>
+    delayMs > 0 ? new Promise((resolve) => setTimeout(resolve, ms)) : Promise.resolve();
+  const requireProfile = (id: string): Profile => {
+    const found = state().profiles.find((p) => p.id === id);
+    if (!found) throw new ApiFailure('profileNotFound');
+    return found;
+  };
+  const assertFileOpsAllowed = () => {
+    if (gameRunning) throw new ApiFailure('gameRunning');
+    if (serverRunning) throw new ApiFailure('serverRunning');
+  };
+  /** Which mods the mock refuses to recycle: every second one, or a lone one. */
+  const recycleRefused = (index: number, total: number) =>
+    recycleFails && (total === 1 || index % 2 === 1);
+  /**
+   * Streams `size` bytes as progress steps; false when the user cancelled. `report` gets the
+   * bytes done so far in this mod.
+   */
+  const stream = async (
+    size: number,
+    report: (bytes: number) => void,
+    steps?: number,
+  ): Promise<boolean> => {
+    const ticks =
+      steps ?? Math.min(MAX_TICKS, Math.max(MIN_TICKS, Math.ceil(size / BYTES_PER_TICK)));
+    for (let tick = 1; tick <= ticks; tick++) {
+      await pause(TICK_MS);
+      if (cancelRequested) return false;
+      report(Math.round((size * tick) / ticks));
+    }
+    return true;
+  };
+  /** Runs one file operation: busy and game guards first, the busy flag held until it ends. */
+  const exclusive = async <T>(body: () => Promise<T>): Promise<T> => {
+    if (running) throw new ApiFailure('busy');
+    assertFileOpsAllowed();
+    running = true;
+    cancelRequested = false;
+    try {
+      return await body();
+    } finally {
+      running = false;
+      cancelRequested = false;
+    }
+  };
 
   /** Guards shared by a switch and an undo, in the order the core checks them. */
   const assertWritable = () => {
@@ -226,9 +316,7 @@ export function createMockApi(options: MockOptions = {}): Api {
     async setActiveProfile(profileId: string): Promise<SwitchResult> {
       await wait();
       assertWritable();
-      if (!dataset(stress).profiles.some((p) => p.id === profileId)) {
-        throw new ApiFailure('profileNotFound');
-      }
+      requireProfile(profileId);
       if (writeFails) throw new ApiFailure('writeFailed');
       return record('switch', profileId);
     },
@@ -251,22 +339,181 @@ export function createMockApi(options: MockOptions = {}): Api {
       if (serverRunning) throw new ApiFailure('serverRunning');
       settingsBroken = false;
     },
-    // WS-C: transfers, removal and profile management in memory.
-    async planTransfer(): Promise<TransferPlan> {
-      throw new ApiFailure('internal');
+    async planTransfer(
+      fromProfileId: string,
+      modIds: string[],
+      toProfileId: string,
+      mode: TransferMode,
+    ): Promise<TransferPlan> {
+      await wait();
+      requireProfile(fromProfileId);
+      requireProfile(toProfileId);
+      if (fromProfileId === toProfileId) throw new ApiFailure('internal', 'sameProfile');
+      const source = state().mods.get(fromProfileId) ?? [];
+      const picked = modIds.map((id) => source.find((mod) => mod.id === id));
+      if (picked.some((mod) => mod === undefined)) throw new ApiFailure('targetChanged');
+      const incoming = picked.filter((mod): mod is ModEntry => mod !== undefined);
+
+      const clashes = findClashes(state(), incoming, toProfileId, guaranteeClashes);
+      settle(state());
+      const sum = incoming.reduce((total, mod) => total + mod.sizeBytes, 0);
+      // Moves inside one drive are renames and write nothing; low space makes them cross-drive.
+      const totalBytes = mode === 'copy' || lowSpace ? sum : 0;
+      const plan: TransferPlan = {
+        planId: `plan-${++planCount}`,
+        fromProfileId,
+        toProfileId,
+        mode,
+        items: incoming.map((mod) => ({
+          modId: mod.id,
+          modName: mod.modName,
+          sizeBytes: mod.sizeBytes,
+        })),
+        clashes,
+        totalBytes,
+        freeBytes: lowSpace ? Math.floor(totalBytes / 2) : FREE_BYTES,
+      };
+      plans.set(plan.planId, { plan });
+      return plan;
     },
-    async executeTransfer(): Promise<OpResult> {
-      throw new ApiFailure('internal');
+    async executeTransfer(
+      planId: string,
+      choices: ClashChoice[],
+      onProgress?: (progress: OpProgress) => void,
+    ): Promise<OpResult> {
+      return exclusive(async () => {
+        const stored = plans.get(planId);
+        if (!stored) throw new ApiFailure('targetChanged');
+        const { plan } = stored;
+        if (plan.totalBytes > plan.freeBytes) throw new ApiFailure('notEnoughSpace');
+        plans.delete(planId);
+
+        const replace = new Map(choices.map((c) => [nameKey(c.modName), c.replace]));
+        const clashing = new Set(plan.clashes.map((c) => nameKey(c.modName)));
+        const replaces = (name: string) =>
+          clashing.has(nameKey(name)) && !!replace.get(nameKey(name));
+        const result: OpResult = { done: [], skipped: [], failed: [] };
+        const work = plan.items.filter((item) => {
+          if (!clashing.has(nameKey(item.modName)) || replaces(item.modName)) return true;
+          result.skipped.push(item.modName);
+          return false;
+        });
+        const totalBytes =
+          plan.totalBytes > 0 ? work.reduce((sum, item) => sum + item.sizeBytes, 0) : 0;
+        const emit = (doneBytes: number, doneItems: number, current: string | null) =>
+          onProgress?.({ doneBytes, totalBytes, current, doneItems, totalItems: work.length });
+
+        let doneBytes = 0;
+        let replaceIndex = 0;
+        const replaceTotal = work.filter((item) => replaces(item.modName)).length;
+        emit(0, 0, null);
+        for (const [index, item] of work.entries()) {
+          const mod = state()
+            .mods.get(plan.fromProfileId)
+            ?.find((m) => m.id === item.modId);
+          if (cancelRequested) {
+            result.failed.push({ modName: item.modName, code: 'cancelled' });
+            continue;
+          }
+          if (!mod) {
+            result.failed.push({ modName: item.modName, code: 'targetChanged' });
+            continue;
+          }
+          emit(doneBytes, index, mod.fileName);
+          // Without bytes to write (a same-drive move) an item is one short step.
+          const finished = await stream(
+            totalBytes > 0 ? mod.sizeBytes : 0,
+            (bytes) => emit(doneBytes + bytes, index, mod.fileName),
+            totalBytes > 0 ? undefined : 1,
+          );
+          if (!finished) {
+            result.failed.push({ modName: item.modName, code: 'cancelled' });
+            continue;
+          }
+          if (replaces(item.modName) && recycleRefused(replaceIndex++, replaceTotal)) {
+            result.failed.push({ modName: item.modName, code: 'recycleUnavailable' });
+            continue;
+          }
+          transferMod(state(), mod, plan.fromProfileId, plan.toProfileId, plan.mode);
+          doneBytes += totalBytes > 0 ? mod.sizeBytes : 0;
+          result.done.push(item.modName);
+        }
+        settle(state());
+        emit(doneBytes, result.done.length, null);
+        return result;
+      });
     },
-    async removeMods(): Promise<OpResult> {
-      throw new ApiFailure('internal');
+    async removeMods(
+      profileId: string,
+      modIds: string[],
+      onProgress?: (progress: OpProgress) => void,
+    ): Promise<OpResult> {
+      return exclusive(async () => {
+        requireProfile(profileId);
+        const mods = state().mods.get(profileId) ?? [];
+        const result: OpResult = { done: [], skipped: [], failed: [] };
+        const picked: ModEntry[] = [];
+        for (const id of modIds) {
+          const mod = mods.find((m) => m.id === id);
+          if (mod) picked.push(mod);
+          else result.failed.push({ modName: id, code: 'targetChanged' });
+        }
+        const totalBytes = picked.reduce((sum, mod) => sum + mod.sizeBytes, 0);
+        const emit = (doneBytes: number, doneItems: number, current: string | null) =>
+          onProgress?.({ doneBytes, totalBytes, current, doneItems, totalItems: picked.length });
+
+        let doneBytes = 0;
+        emit(0, 0, null);
+        for (const [index, mod] of picked.entries()) {
+          if (cancelRequested) {
+            result.failed.push({ modName: mod.modName, code: 'cancelled' });
+            continue;
+          }
+          emit(doneBytes, index, mod.fileName);
+          const finished = await stream(
+            mod.sizeBytes,
+            (bytes) => emit(doneBytes + bytes, index, mod.fileName),
+            6,
+          );
+          if (!finished) {
+            result.failed.push({ modName: mod.modName, code: 'cancelled' });
+            continue;
+          }
+          if (recycleRefused(index, picked.length)) {
+            result.failed.push({ modName: mod.modName, code: 'recycleUnavailable' });
+            continue;
+          }
+          removeMod(state(), profileId, mod.id);
+          doneBytes += mod.sizeBytes;
+          result.done.push(mod.modName);
+        }
+        settle(state());
+        emit(doneBytes, result.done.length, null);
+        return result;
+      });
     },
-    async cancelOperation(): Promise<void> {},
-    async renameProfile(): Promise<void> {
-      throw new ApiFailure('internal');
+    async cancelOperation(): Promise<void> {
+      if (running) cancelRequested = true;
     },
-    async removeProfile(): Promise<void> {
-      throw new ApiFailure('internal');
+    /** Same rules as the core: a trimmed name of 1 to 100 characters; the folder is untouched. */
+    async renameProfile(profileId: string, name: string): Promise<void> {
+      await wait();
+      requireProfile(profileId);
+      if (validateProfileName(name) !== null) throw new ApiFailure('internal', 'invalidName');
+      state().profiles = state().profiles.map((p) =>
+        p.id === profileId ? { ...p, name: name.trim() } : p,
+      );
+    },
+    /** The active folder and the game default stay in the list; the folder itself is untouched. */
+    async removeProfile(profileId: string): Promise<void> {
+      await wait();
+      const profile = requireProfile(profileId);
+      if (profile.id === activeId || profile.isGameDefault) {
+        throw new ApiFailure('cannotRemoveProfile');
+      }
+      state().profiles = state().profiles.filter((p) => p.id !== profileId);
+      state().mods.delete(profileId);
+      settle(state());
     },
     async getGameStatus(): Promise<GameStatus> {
       await wait();
@@ -285,7 +532,7 @@ export function createMockApi(options: MockOptions = {}): Api {
     },
     async listProfiles(): Promise<Profile[]> {
       await wait();
-      return dataset(stress).profiles.map((p) => ({
+      return state().profiles.map((p) => ({
         ...p,
         isActive: !settingsBroken && p.id === activeId,
       }));
@@ -298,7 +545,7 @@ export function createMockApi(options: MockOptions = {}): Api {
         await wait();
         throw new ApiFailure('folderUnreadable');
       }
-      const mods = dataset(stress).mods.get(profileId)?.slice() ?? [];
+      const mods = state().mods.get(profileId)?.slice() ?? [];
       // Spread the delay over a few steps, each reporting how much has been "read" so far.
       for (let step = 1; step <= PROGRESS_STEPS; step++) {
         await new Promise((resolve) => setTimeout(resolve, delayMs / PROGRESS_STEPS));

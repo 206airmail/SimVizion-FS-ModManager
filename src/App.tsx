@@ -3,10 +3,12 @@ import { useCallback, useState } from 'react';
 import type { Profile } from './api';
 import { api } from './api/client';
 import { ActionErrorBanner } from './features/ActionErrorBanner';
+import { FileOpsNotices } from './features/files/FileOpsNotices';
+import { useFileOps } from './features/files/useFileOps';
 import { Gallery } from './features/gallery/Gallery';
 import { LibraryScreen } from './features/library/LibraryScreen';
 import { AppHeader } from './features/shell/AppHeader';
-import { ProfileRail, type Section } from './features/shell/ProfileRail';
+import { ProfileRail, type ProfileActions, type Section } from './features/shell/ProfileRail';
 import { StatusBar } from './features/shell/StatusBar';
 import { useGameStatus } from './features/shell/useGameStatus';
 import { SettingsRestoreBanner } from './features/switching/SettingsRestoreBanner';
@@ -48,6 +50,9 @@ function Workspace() {
   const switching = useSwitching(reloadAfterWrite);
   const clearSwitching = switching.clear;
   const settingsRestore = useSettingsRestore(game, reloadAfterWrite);
+  // Copy, move and remove live here, not in a screen: their progress banner must stay while the
+  // user browses other profiles.
+  const fileOps = useFileOps(reloadAfterWrite);
 
   const selectProfile = useCallback(
     (id: string) => {
@@ -80,6 +85,32 @@ function Workspace() {
     profiles[0] ??
     null;
 
+  // Profile management only edits the app's own list, so the game does not gate it; a running
+  // file operation does gate removal, which might take away a folder it is working in.
+  const operationRunning = fileOps.running !== null;
+  const profileActions: ProfileActions = {
+    rename: async (target, name) => {
+      await api.renameProfile(target.id, name);
+      await reloadAfterWrite();
+    },
+    remove: async (target) => {
+      await api.removeProfile(target.id);
+      const fresh = await reloadAfterWrite();
+      // The folder on screen is gone: show the one the game uses instead.
+      if (target.id === profile?.id) {
+        setChosenProfileId(fresh?.find((candidate) => candidate.isActive)?.id ?? null);
+      }
+    },
+    removeBlockedReason: (target) =>
+      target.isActive
+        ? strings.profileMenu.blockedActive
+        : target.isGameDefault
+          ? strings.profileMenu.blockedDefault
+          : operationRunning
+            ? strings.profileMenu.blockedRunning
+            : null,
+  };
+
   return (
     <div className="mm-app">
       <AppHeader activeProfile={activeProfile} game={game} />
@@ -92,10 +123,12 @@ function Workspace() {
           onSelectProfile={selectProfile}
           onSelectSection={setSection}
           onAddFolder={() => void addProfile()}
+          profileActions={profileActions}
         />
 
         <div className="mm-content">
           <SettingsRestoreBanner restore={settingsRestore} />
+          <FileOpsNotices fileOps={fileOps} />
           {addFolder.message !== null && (
             <ActionErrorBanner
               title={strings.actionFailed.addFolder}
@@ -133,6 +166,7 @@ function Workspace() {
                 profiles={profiles}
                 game={game}
                 switching={switching}
+                fileOps={fileOps}
               />
             </main>
           ) : (

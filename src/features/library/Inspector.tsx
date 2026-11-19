@@ -1,12 +1,10 @@
 import {
   Boxes,
   CircleCheck,
-  Copy,
   FolderOpen,
   Link2,
   MousePointerClick,
   PanelRightClose,
-  Trash2,
   TriangleAlert,
 } from 'lucide-react';
 import type { ReactNode } from 'react';
@@ -21,6 +19,8 @@ import { cx } from '../../ui/cx';
 import { Banner, EmptyState } from '../../ui/Feedback';
 import { Icon } from '../../ui/Icon';
 import { Pill } from '../../ui/Pill';
+import { FileActions } from '../files/FileActions';
+import type { FileOpsController } from '../files/useFileOps';
 import { describeSource, kindIcons, severityIcons } from './labels';
 import { ModIcon } from './ModIcon';
 
@@ -29,6 +29,7 @@ export interface InspectorProps {
   mods: readonly ModEntry[];
   profiles: readonly Profile[];
   game: GameStatus | null;
+  fileOps: FileOpsController;
   /** Shown as a drawer over the list instead of beside it. */
   overlay: boolean;
   onClose: () => void;
@@ -39,7 +40,7 @@ const t = strings.inspector;
 /** The issue's data worded for display; null when there is nothing to add to the help text. */
 const detailText = (issue: ModIssue) => strings.issueDetail[issue.kind](issue.detail);
 
-export function Inspector({ mods, profiles, game, overlay, onClose }: InspectorProps) {
+export function Inspector({ mods, profiles, game, fileOps, overlay, onClose }: InspectorProps) {
   const only = mods.length === 1 ? mods[0] : undefined;
   return (
     <aside
@@ -52,13 +53,20 @@ export function Inspector({ mods, profiles, game, overlay, onClose }: InspectorP
       </div>
 
       {only ? (
-        <ModDetails mod={only} profiles={profiles} game={game} />
+        <ModDetails mod={only} profiles={profiles} game={game} fileOps={fileOps} />
       ) : mods.length > 1 ? (
-        <EmptyState
-          icon={Boxes}
-          title={t.multiTitle(mods.length)}
-          description={t.multiText(formatBytes(mods.reduce((sum, mod) => sum + mod.sizeBytes, 0)))}
-        />
+        <>
+          <EmptyState
+            icon={Boxes}
+            title={t.multiTitle(mods.length)}
+            description={t.multiText(
+              formatBytes(mods.reduce((sum, mod) => sum + mod.sizeBytes, 0)),
+            )}
+          />
+          <div className="sv-panel__footer">
+            <FileActions mods={mods} profiles={profiles} game={game} fileOps={fileOps} />
+          </div>
+        </>
       ) : (
         <EmptyState icon={MousePointerClick} title={t.emptyTitle} description={t.emptyText} />
       )}
@@ -70,10 +78,12 @@ function ModDetails({
   mod,
   profiles,
   game,
+  fileOps,
 }: {
   mod: ModEntry;
   profiles: readonly Profile[];
   game: GameStatus | null;
+  fileOps: FileOpsController;
 }) {
   const showInFolder = useActionError(`${mod.profileId}/${mod.id}`);
   const otherProfiles = profiles.filter((profile) => mod.alsoIn.includes(profile.id));
@@ -221,20 +231,12 @@ function ModDetails({
         />
       )}
       <div className="sv-panel__footer">
-        <Button
-          size="compact"
+        <IconButton
           icon={FolderOpen}
+          label={t.showInFolder}
           onClick={() => void showInFolder.run(() => api.showModInFolder(mod.profileId, mod.id))}
-        >
-          {t.showInFolder}
-        </Button>
-        <Button size="compact" icon={Copy}>
-          {t.copyTo}
-        </Button>
-        <span className="mm-inspector__footer-gap" />
-        <Button size="compact" variant="destructive" icon={Trash2}>
-          {t.remove}
-        </Button>
+        />
+        <FileActions mods={[mod]} profiles={profiles} game={game} fileOps={fileOps} />
       </div>
     </>
   );
