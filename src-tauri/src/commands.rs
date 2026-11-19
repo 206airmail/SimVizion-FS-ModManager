@@ -13,7 +13,7 @@ use tauri_plugin_dialog::DialogExt;
 use crate::AppState;
 
 /// Runs `work` on the blocking pool; a panic there becomes an `internal` error.
-async fn blocking<T: Send + 'static>(
+pub(crate) async fn blocking<T: Send + 'static>(
     work: impl FnOnce() -> Result<T, ApiError> + Send + 'static,
 ) -> Result<T, ApiError> {
     tauri::async_runtime::spawn_blocking(work)
@@ -25,7 +25,7 @@ fn internal(e: impl std::fmt::Display) -> ApiError {
     ApiError::new(ErrorCode::Internal, Some(e.to_string()))
 }
 
-fn context() -> GameContext {
+pub(crate) fn context() -> GameContext {
     discovery::game_context(&WindowsProbe)
 }
 
