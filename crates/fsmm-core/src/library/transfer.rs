@@ -59,9 +59,9 @@ pub struct OpEnv<'a> {
 /// The busy flag, the cancel flag and the plans of one `Library`.
 #[derive(Default)]
 pub(super) struct TransferState {
-    busy: AtomicBool,
-    cancel: AtomicBool,
-    next_plan: AtomicU64,
+    pub(super) busy: AtomicBool,
+    pub(super) cancel: AtomicBool,
+    pub(super) next_plan: AtomicU64,
     plans: Mutex<HashMap<String, Plan>>,
 }
 
@@ -114,7 +114,7 @@ impl Drop for BusyGuard<'_> {
 
 /// Throttled, monotonic progress for one operation. Events go out from the working thread, so
 /// they reach the callback in order.
-struct Tracker<'a> {
+pub(super) struct Tracker<'a> {
     sink: &'a (dyn Fn(OpProgress) + Sync),
     total_bytes: u64,
     total_items: u32,
@@ -125,7 +125,11 @@ struct Tracker<'a> {
 }
 
 impl<'a> Tracker<'a> {
-    fn new(sink: &'a (dyn Fn(OpProgress) + Sync), total_bytes: u64, total_items: usize) -> Self {
+    pub(super) fn new(
+        sink: &'a (dyn Fn(OpProgress) + Sync),
+        total_bytes: u64,
+        total_items: usize,
+    ) -> Self {
         Self {
             sink,
             total_bytes,
@@ -137,7 +141,7 @@ impl<'a> Tracker<'a> {
         }
     }
 
-    fn send(&mut self) {
+    pub(super) fn send(&mut self) {
         (self.sink)(OpProgress {
             done_bytes: self.done_bytes,
             total_bytes: self.total_bytes,
@@ -158,31 +162,31 @@ impl<'a> Tracker<'a> {
     }
 
     /// The mod being worked on.
-    fn begin(&mut self, file_name: &str) {
+    pub(super) fn begin(&mut self, file_name: &str) {
         self.current = Some(file_name.to_string());
         self.tick();
     }
 
-    fn add_bytes(&mut self, n: u64) {
+    pub(super) fn add_bytes(&mut self, n: u64) {
         self.done_bytes = self.done_bytes.saturating_add(n).min(self.total_bytes);
         self.tick();
     }
 
     /// An item is over, whatever its outcome: counts it, and brings the byte count up to what
     /// the items so far were planned to write (a failed item's bytes will not come).
-    fn end_item(&mut self, settled_bytes: u64) {
+    pub(super) fn end_item(&mut self, settled_bytes: u64) {
         self.done_bytes = self.done_bytes.max(settled_bytes.min(self.total_bytes));
         self.done_items = self.done_items.saturating_add(1);
         self.tick();
     }
 
-    fn finish(&mut self) {
+    pub(super) fn finish(&mut self) {
         self.current = None;
         self.send();
     }
 }
 
-fn io_api(e: &io::Error) -> ApiError {
+pub(super) fn io_api(e: &io::Error) -> ApiError {
     ApiError::new(ErrorCode::Internal, Some(format!("{:?}", e.kind())))
 }
 
@@ -219,15 +223,15 @@ fn current_stamp(path: &Path) -> Option<FileStamp> {
     Some(FileStamp { size, modified })
 }
 
-fn unchanged(path: &Path, stamp: FileStamp) -> bool {
+pub(super) fn unchanged(path: &Path, stamp: FileStamp) -> bool {
     current_stamp(path) == Some(stamp)
 }
 
-fn running_code(env: &OpEnv<'_>) -> Result<(), ErrorCode> {
+pub(super) fn running_code(env: &OpEnv<'_>) -> Result<(), ErrorCode> {
     ops::check_not_running(env.running).map_err(|e| ApiError::from(e).code)
 }
 
-fn recycle_code(e: &RecycleError) -> ErrorCode {
+pub(super) fn recycle_code(e: &RecycleError) -> ErrorCode {
     match e {
         RecycleError::Unavailable => ErrorCode::RecycleUnavailable,
         RecycleError::Failed(_) => ErrorCode::WriteFailed,
@@ -244,7 +248,7 @@ fn file_op_code(e: &FileOpError) -> ErrorCode {
 }
 
 /// Errors that end the operation: the items after them are failed with the same code.
-fn stops_operation(code: ErrorCode) -> bool {
+pub(super) fn stops_operation(code: ErrorCode) -> bool {
     matches!(
         code,
         ErrorCode::Cancelled | ErrorCode::GameRunning | ErrorCode::ServerRunning
@@ -716,14 +720,14 @@ impl Library {
 
     /// Drops the profile's last scan, so the next listing, `also_in` and mod lookup read the
     /// folder again.
-    fn forget_scan(&self, profile_id: &str) {
+    pub(super) fn forget_scan(&self, profile_id: &str) {
         self.scans
             .write()
             .unwrap_or_else(PoisonError::into_inner)
             .remove(profile_id);
     }
 
-    fn journal_file_op(
+    pub(super) fn journal_file_op(
         &self,
         kind: &str,
         plan_id: Option<&str>,

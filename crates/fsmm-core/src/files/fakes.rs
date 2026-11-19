@@ -50,6 +50,16 @@ impl FakeRecycler {
         lock(&self.calls).clone()
     }
 
+    /// The items in the bin, sorted by their full (prefixed) names.
+    pub fn binned_files(&self) -> Vec<PathBuf> {
+        let mut paths: Vec<PathBuf> = fs::read_dir(&self.bin)
+            .unwrap()
+            .map(|e| e.unwrap().path())
+            .collect();
+        paths.sort();
+        paths
+    }
+
     /// Names of the items in the bin (without the numeric prefix the fake adds), sorted.
     pub fn binned(&self) -> Vec<String> {
         let mut names: Vec<String> = fs::read_dir(&self.bin)

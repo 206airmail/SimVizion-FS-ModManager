@@ -511,3 +511,359 @@ fn errors_carry_kinds_and_never_file_contents() {
     let text = format!("{err} {err:?}");
     assert!(!text.contains("hunter2") && !text.contains("other-secret"));
 }
+
+// ---------------------------------------------------------------- install_download (plan M7)
+
+/// The bytes of a mod zip whose `modDesc.xml` has this version.
+fn mod_zip_bytes(version: &str, extra: usize) -> Vec<u8> {
+    let tmp = tempfile::tempdir().unwrap();
+    let path = tmp.path().join("m.zip");
+    let desc = format!(
+        "<?xml version=\"1.0\" encoding=\"utf-8\"?><modDesc descVersion=\"105\">\
+         <title><en>T</en></title><version>{version}</version></modDesc>"
+    );
+    let padding: Vec<u8> = (0..extra).map(|i| (i % 251) as u8).collect();
+    write_zip(
+        &path,
+        &[("modDesc.xml", desc.as_bytes()), ("data.bin", &padding)],
+        Method::Stored,
+    );
+    fs::read(path).unwrap()
+}
+
+fn sha_hex(bytes: &[u8]) -> String {
+    use sha2::{Digest, Sha256};
+    format!("{:x}", Sha256::digest(bytes))
+}
+
+fn check_of(min_version: &str) -> DownloadCheck {
+    DownloadCheck {
+        sha256: None,
+        min_version: min_version.to_string(),
+        approx_size: None,
+    }
+}
+
+fn filler(bytes: Vec<u8>) -> impl FnMut(&mut File) -> Result<(), FileOpError> {
+    move |file| file.write_all(&bytes).map_err(|e| io_err(&e))
+}
+
+fn nothing() -> impl FnMut() -> Result<(), FileOpError> {
+    || Ok(())
+}
+
+/// Installs `bytes` as `FS25_X.zip` in the dst folder with a recycle of the old file.
+fn install(d: &Dirs, bytes: Vec<u8>, check: &DownloadCheck) -> Result<PathBuf, FileOpError> {
+    let old = d.dst.join("FS25_X.zip");
+    install_download(&d.dst, "FS25_X.zip", &mut filler(bytes), check, &mut || {
+        d.recycler.recycle(&old).map_err(FileOpError::Recycle)
+    })
+}
+
+fn write_old(d: &Dirs) -> Vec<u8> {
+    let old = mod_zip_bytes("1.0.0.0", 10);
+    fs::write(d.dst.join("FS25_X.zip"), &old).unwrap();
+    old
+}
+
+#[test]
+fn a_good_download_replaces_the_installed_mod_and_recycles_the_old_one() {
+    let d = dirs();
+    let old = write_old(&d);
+    let new = mod_zip_bytes("1.1.0.0", 5000);
+    let check = DownloadCheck {
+        sha256: Some(sha_hex(&new).to_uppercase()),
+        min_version: "v1.1.0.0".to_string(),
+        approx_size: Some(new.len() as u64),
+    };
+    let path = install(&d, new.clone(), &check).unwrap();
+    assert_eq!(path, d.dst.join("FS25_X.zip"));
+    assert_eq!(fs::read(&path).unwrap(), new);
+    assert_eq!(names(&d.dst), ["FS25_X.zip"], "no staged file is left");
+    assert_eq!(d.recycler.binned(), ["FS25_X.zip"]);
+    assert_eq!(fs::read(&d.recycler.binned_files()[0]).unwrap(), old);
+}
+
+#[test]
+fn a_download_with_nothing_to_replace_just_installs() {
+    let d = dirs();
+    let new = mod_zip_bytes("2.0", 10);
+    let path = install_download(
+        &d.dst,
+        "FS25_X.zip",
+        &mut filler(new.clone()),
+        &check_of("2.0.0.0"),
+        &mut nothing(),
+    )
+    .unwrap();
+    assert_eq!(fs::read(path).unwrap(), new);
+    assert!(d.recycler.calls().is_empty());
+}
+
+#[test]
+fn the_download_is_staged_under_a_hidden_name_and_verified_before_the_old_mod_goes() {
+    let d = dirs();
+    write_old(&d);
+    let order = std::cell::RefCell::new(Vec::new());
+    let new = mod_zip_bytes("1.1", 10);
+    install_download(
+        &d.dst,
+        "FS25_X.zip",
+        &mut |file: &mut File| {
+            order.borrow_mut().push(format!("fill {:?}", names(&d.dst)));
+            file.write_all(&new).map_err(|e| io_err(&e))
+        },
+        &check_of("1.1"),
+        &mut || {
+            // The staged file is complete and still hidden, the old mod is still in place.
+            order
+                .borrow_mut()
+                .push(format!("rename {:?}", names(&d.dst)));
+            d.recycler
+                .recycle(&d.dst.join("FS25_X.zip"))
+                .map_err(FileOpError::Recycle)
+        },
+    )
+    .unwrap();
+    let staged = r#"[".FS25_X.zip.fsmm-partial", "FS25_X.zip"]"#;
+    assert_eq!(
+        order.into_inner(),
+        [format!("fill {staged}"), format!("rename {staged}")]
+    );
+}
+
+fn assert_untouched(d: &Dirs, old: &[u8]) {
+    assert_eq!(
+        names(&d.dst),
+        ["FS25_X.zip"],
+        "only the old mod, no staged file"
+    );
+    assert_eq!(fs::read(d.dst.join("FS25_X.zip")).unwrap(), old);
+    assert!(
+        d.recycler.calls().is_empty(),
+        "the old mod was never touched"
+    );
+}
+
+fn verify_detail(result: Result<PathBuf, FileOpError>) -> String {
+    match result {
+        Err(FileOpError::Verify(detail)) => detail,
+        other => panic!("expected a verify failure, got {other:?}"),
+    }
+}
+
+#[test]
+fn a_wrong_sha256_fails_and_leaves_the_old_mod_alone() {
+    let d = dirs();
+    let old = write_old(&d);
+    let new = mod_zip_bytes("1.1", 10);
+    let check = DownloadCheck {
+        sha256: Some(sha_hex(b"something else")),
+        ..check_of("1.1")
+    };
+    assert_eq!(verify_detail(install(&d, new, &check)), "sha256");
+    assert_untouched(&d, &old);
+}
+
+#[test]
+fn a_file_that_is_not_a_zip_fails() {
+    let d = dirs();
+    let old = write_old(&d);
+    let detail = verify_detail(install(
+        &d,
+        b"<html>not a zip</html>".to_vec(),
+        &check_of("1.1"),
+    ));
+    assert_eq!(detail, "notAZip");
+    assert_untouched(&d, &old);
+    // An empty download is not a zip either.
+    assert_eq!(
+        verify_detail(install(&d, Vec::new(), &check_of("1.1"))),
+        "notAZip"
+    );
+    assert_untouched(&d, &old);
+}
+
+#[test]
+fn a_zip_without_a_readable_mod_desc_fails() {
+    let d = dirs();
+    let old = write_old(&d);
+    let tmp = tempfile::tempdir().unwrap();
+    let none = tmp.path().join("none.zip");
+    write_zip(&none, &[("readme.txt", b"hi".as_slice())], Method::Stored);
+    let bad = tmp.path().join("bad.zip");
+    write_zip(
+        &bad,
+        &[("modDesc.xml", b"<modDesc><unclosed>".as_slice())],
+        Method::Stored,
+    );
+    for file in [none, bad] {
+        let detail = verify_detail(install(&d, fs::read(file).unwrap(), &check_of("1.1")));
+        assert_eq!(detail, "noModDesc");
+        assert_untouched(&d, &old);
+    }
+}
+
+#[test]
+fn a_mod_desc_older_than_promised_fails_and_an_equal_or_newer_one_passes() {
+    let d = dirs();
+    let old = write_old(&d);
+    for version in ["1.0.9.9", "0.9", "", "garbage"] {
+        let detail = verify_detail(install(
+            &d,
+            mod_zip_bytes(version, 10),
+            &check_of("1.1.0.0"),
+        ));
+        assert_eq!(detail, "version", "{version:?}");
+        assert_untouched(&d, &old);
+    }
+    for (version, wanted) in [("1.1", "v1.1.0.0"), ("1.1.0.1", "1.1"), ("2.0", "1.1.0.0")] {
+        let d = dirs();
+        write_old(&d);
+        install(&d, mod_zip_bytes(version, 10), &check_of(wanted)).unwrap();
+    }
+}
+
+#[test]
+fn an_unparseable_promised_version_only_matches_exactly() {
+    let d = dirs();
+    let old = write_old(&d);
+    assert_eq!(
+        verify_detail(install(&d, mod_zip_bytes("1.0", 10), &check_of("nightly"))),
+        "version"
+    );
+    assert_untouched(&d, &old);
+    install(&d, mod_zip_bytes("nightly", 10), &check_of("nightly")).unwrap();
+}
+
+#[test]
+fn the_size_must_be_within_five_percent_of_the_page() {
+    let new = mod_zip_bytes("1.1", 20_000);
+    let size = new.len() as u64;
+    let with = |approx: u64| DownloadCheck {
+        approx_size: Some(approx),
+        ..check_of("1.1")
+    };
+    for approx in [size, size * 104 / 100, size * 96 / 100, size * 1000 / 1049] {
+        let d = dirs();
+        write_old(&d);
+        install(&d, new.clone(), &with(approx)).unwrap_or_else(|e| panic!("{approx}: {e}"));
+    }
+    for approx in [size * 2, size / 2, size * 106 / 100, size * 94 / 100, 1] {
+        let d = dirs();
+        let old = write_old(&d);
+        assert_eq!(
+            verify_detail(install(&d, new.clone(), &with(approx))),
+            "size",
+            "{approx}"
+        );
+        assert_untouched(&d, &old);
+    }
+    // A page that gave no size (or 0) is not checked.
+    let d = dirs();
+    write_old(&d);
+    install(&d, new.clone(), &with(0)).unwrap();
+}
+
+#[test]
+fn a_failing_fill_leaves_nothing_behind() {
+    let d = dirs();
+    let old = write_old(&d);
+    let errors: [fn() -> FileOpError; 2] = [
+        || FileOpError::Cancelled,
+        || FileOpError::Io("BrokenPipe".to_string()),
+    ];
+    for make in errors {
+        let result = install_download(
+            &d.dst,
+            "FS25_X.zip",
+            &mut |file: &mut File| {
+                file.write_all(b"partial").map_err(|e| io_err(&e))?;
+                Err(make())
+            },
+            &check_of("1.1"),
+            &mut nothing(),
+        );
+        assert!(result.is_err());
+        assert_untouched(&d, &old);
+    }
+}
+
+#[test]
+fn a_refused_recycle_keeps_the_old_mod_and_removes_the_download() {
+    let d = dirs();
+    let old = write_old(&d);
+    d.recycler.refuse(&d.dst.join("FS25_X.zip"));
+    let err = install(&d, mod_zip_bytes("1.1", 10), &check_of("1.1")).unwrap_err();
+    assert!(
+        matches!(err, FileOpError::Recycle(RecycleError::Unavailable)),
+        "{err}"
+    );
+    assert_eq!(names(&d.dst), ["FS25_X.zip"]);
+    assert_eq!(fs::read(d.dst.join("FS25_X.zip")).unwrap(), old);
+}
+
+#[test]
+fn an_old_mod_that_is_still_there_after_before_rename_is_never_overwritten() {
+    let d = dirs();
+    let old = write_old(&d);
+    let err = install_download(
+        &d.dst,
+        "FS25_X.zip",
+        &mut filler(mod_zip_bytes("1.1", 10)),
+        &check_of("1.1"),
+        &mut nothing(),
+    )
+    .unwrap_err();
+    assert!(matches!(err, FileOpError::Exists));
+    assert_untouched(&d, &old);
+}
+
+#[test]
+fn a_leftover_staged_file_is_replaced_not_reused() {
+    let d = dirs();
+    fs::write(
+        d.dst.join(staging_name("FS25_X.zip")),
+        b"leftover from a crash",
+    )
+    .unwrap();
+    let new = mod_zip_bytes("1.1", 10);
+    let path = install_download(
+        &d.dst,
+        "FS25_X.zip",
+        &mut filler(new.clone()),
+        &check_of("1.1"),
+        &mut nothing(),
+    )
+    .unwrap();
+    assert_eq!(fs::read(path).unwrap(), new);
+    assert_eq!(names(&d.dst), ["FS25_X.zip"]);
+}
+
+#[test]
+fn only_a_bare_file_name_is_installed() {
+    let d = dirs();
+    for name in ["", "a/b.zip", "..\\x.zip", "..", ".", "C:\\x.zip", "sub/"] {
+        let result = install_download(
+            &d.dst,
+            name,
+            &mut filler(mod_zip_bytes("1.1", 10)),
+            &check_of("1.1"),
+            &mut nothing(),
+        );
+        assert!(matches!(result, Err(FileOpError::Io(_))), "{name:?}");
+    }
+    assert!(names(&d.dst).is_empty());
+    assert!(names(d.dst.parent().unwrap())
+        .iter()
+        .all(|n| n != "x.zip" && n != "b.zip"));
+}
+
+#[test]
+fn verify_failures_carry_the_check_name_and_never_the_content() {
+    let d = dirs();
+    write_old(&d);
+    let err = install(&d, b"hunter2-secret-content".to_vec(), &check_of("1.1")).unwrap_err();
+    let text = format!("{err} {err:?}");
+    assert!(text.contains("notAZip") && !text.contains("hunter2"));
+}
