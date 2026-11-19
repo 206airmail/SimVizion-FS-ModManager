@@ -42,6 +42,14 @@ export const strings = {
     writesDisabled: 'This development build does not write game files, so nothing was changed.',
     nothingToUndo: 'There is nothing to undo any more, so nothing was changed.',
     noBackup: 'No backup of gameSettings.xml was found, so nothing was restored.',
+    recycleUnavailable:
+      'Windows cannot put this in the Recycle Bin (it may be too large, or the drive has no Recycle Bin), so it was left in place.',
+    notEnoughSpace: 'The target drive does not have enough free space, so nothing was copied.',
+    busy: 'Another file operation is still running. Wait for it to finish.',
+    cancelled: 'Cancelled. Mods not yet finished were left as they were.',
+    targetChanged:
+      'The mod or the target folder changed since the plan was made, so it was skipped.',
+    cannotRemoveProfile: 'The active folder and the game default folder stay in the list.',
   } satisfies Record<ErrorCode, string>,
 
   actionFailed: {

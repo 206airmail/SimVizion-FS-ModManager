@@ -1,4 +1,13 @@
-import type { Api, GameStatus, ModEntry, Profile, ScanProgress, SwitchResult } from '..';
+import type {
+  Api,
+  GameStatus,
+  ModEntry,
+  OpResult,
+  Profile,
+  ScanProgress,
+  SwitchResult,
+  TransferPlan,
+} from '..';
 import { ApiFailure } from '../../lib/errors';
 import { GAME_DESC_VERSION } from './entry';
 import { createRng } from './prng';
@@ -241,6 +250,23 @@ export function createMockApi(options: MockOptions = {}): Api {
       if (gameRunning) throw new ApiFailure('gameRunning');
       if (serverRunning) throw new ApiFailure('serverRunning');
       settingsBroken = false;
+    },
+    // WS-C: transfers, removal and profile management in memory.
+    async planTransfer(): Promise<TransferPlan> {
+      throw new ApiFailure('internal');
+    },
+    async executeTransfer(): Promise<OpResult> {
+      throw new ApiFailure('internal');
+    },
+    async removeMods(): Promise<OpResult> {
+      throw new ApiFailure('internal');
+    },
+    async cancelOperation(): Promise<void> {},
+    async renameProfile(): Promise<void> {
+      throw new ApiFailure('internal');
+    },
+    async removeProfile(): Promise<void> {
+      throw new ApiFailure('internal');
     },
     async getGameStatus(): Promise<GameStatus> {
       await wait();
