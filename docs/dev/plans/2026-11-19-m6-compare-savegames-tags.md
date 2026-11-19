@@ -174,3 +174,14 @@ Researched in the decompiled 1.25.1.0 scripts and checked against the real files
 - Version comparison of DLC content.
 - Launching the game with a save.
 - Bulk tag management screen (rename or delete a tag everywhere).
+
+## Status
+
+2026-11-19: all stages are done, and the milestone is waiting for review as a pull request.
+
+- **Stage 0:** done. Contract, skeletons and commands. The spike found that nothing is built into the game.
+- **Stage 1:** done. WS-A (core) and WS-C (frontend) were merged.
+- **Stage 2:** done. Two changes during integration:
+  - The note field also saves an unsaved draft when it unmounts. A focused field that is removed gets no blur event, and the note would be lost.
+  - Debug timing lines for the M6 commands.
+- **Real-app check:** passed. The results are in `docs/dev/STATUS.md`.

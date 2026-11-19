@@ -1,5 +1,5 @@
 import { Check } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { ModEntry } from '../../api';
 import { strings } from '../../strings';
 import { Icon } from '../../ui/Icon';
@@ -15,13 +15,29 @@ type Status = 'idle' | 'saving' | 'saved';
  * The note of one mod. It saves when the field loses focus and on Ctrl+Enter, and says "Saved"
  * for a moment. The text stays in the field if saving fails (the failure is shown by the
  * inspector), so the user can try again. Mount it with a key per mod.
+ *
+ * It also saves an unsaved draft when it unmounts: a focused field that is removed (the inspector
+ * switching to another mod by keyboard, a re-render) gets no blur event, and the text would be
+ * lost.
  */
 export function NoteField({ mod, meta }: { mod: ModEntry; meta: ModMetaController }) {
   const [draft, setDraft] = useState(mod.note ?? '');
   const [status, setStatus] = useState<Status>('idle');
   const timer = useRef<number | undefined>(undefined);
+  // What unmounting needs: the latest draft, the mod and the controller it was edited with.
+  const latest = useRef({ draft, mod, meta });
+  useLayoutEffect(() => {
+    latest.current = { draft, mod, meta };
+  });
 
-  useEffect(() => () => window.clearTimeout(timer.current), []);
+  useEffect(
+    () => () => {
+      window.clearTimeout(timer.current);
+      const { draft: text, mod: current, meta: controller } = latest.current;
+      if (text !== (current.note ?? '')) void controller.setNote(current, text);
+    },
+    [],
+  );
 
   const save = async () => {
     if (draft === (mod.note ?? '')) return;
