@@ -198,7 +198,9 @@ impl Copier<'_> {
         if let Some(modified) = modified {
             output.set_modified(modified).map_err(|e| io_err(&e))?;
         }
-        Ok(())
+        // On disk before the rename makes it visible, so a power cut cannot leave a mod under its
+        // real name with missing data (and, for a move, the source already in the Recycle Bin).
+        output.sync_all().map_err(|e| io_err(&e))
     }
 
     fn folder(&mut self, src: &Path, dst: &Path) -> Result<(), FileOpError> {
@@ -291,11 +293,36 @@ fn copy_staged_with(
     cancel: &AtomicBool,
     after_copy: &dyn Fn(&Path),
 ) -> Result<PathBuf, FileOpError> {
-    let name = name_of(src)?;
-    let target = dst_dir.join(name);
-    if taken(&target) {
+    if taken(&dst_dir.join(name_of(src)?)) {
         return Err(FileOpError::Exists);
     }
+    stage(src, dst_dir, progress, cancel, after_copy, &mut || Ok(()))
+}
+
+/// [`copy_staged`] for a replace. `before_rename` runs once the copy has verified, just before it
+/// takes its name; that is where the mod being replaced goes to the Recycle Bin, so a cancelled or
+/// failed copy leaves it in place. An error from it removes the staged copy and is returned. The
+/// target name may be taken until `before_rename` has run.
+pub fn copy_staged_replacing(
+    src: &Path,
+    dst_dir: &Path,
+    progress: &mut dyn FnMut(u64),
+    cancel: &AtomicBool,
+    before_rename: &mut dyn FnMut() -> Result<(), FileOpError>,
+) -> Result<PathBuf, FileOpError> {
+    stage(src, dst_dir, progress, cancel, &|_| {}, before_rename)
+}
+
+fn stage(
+    src: &Path,
+    dst_dir: &Path,
+    progress: &mut dyn FnMut(u64),
+    cancel: &AtomicBool,
+    after_copy: &dyn Fn(&Path),
+    before_rename: &mut dyn FnMut() -> Result<(), FileOpError>,
+) -> Result<PathBuf, FileOpError> {
+    let name = name_of(src)?;
+    let target = dst_dir.join(name);
     let is_dir = fs::metadata(src).map_err(|e| io_err(&e))?.is_dir();
     let staging = dst_dir.join(staging_os_name(name));
     // A leftover of an earlier, interrupted copy of this same mod.
@@ -314,6 +341,7 @@ fn copy_staged_with(
         }
         after_copy(&staging);
         verify(src, &staging, is_dir, is_zip_name(name))?;
+        before_rename()?;
         // The last look before the rename, which would replace a file that appeared meanwhile.
         if taken(&target) {
             return Err(FileOpError::Exists);
