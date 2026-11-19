@@ -41,3 +41,19 @@ Why: the user wants update checks and one-click updates for mods from the offici
 ## 2026-11-18: TypeScript pinned to 6.0.x
 
 Why: `typescript-eslint` 8.73 declares `typescript <6.1.0`, and TypeScript 7 is the current `latest`. Revisit when the linter supports it.
+
+## 2026-11-18: M2 read-only core — libraries
+
+Why: smallest set that covers what the real mod collection uses (surveyed read-only: Stored/Deflate zips; DXT1/3/5, BC7 and uncompressed DDS icons; UTF-8 modDesc files). `zip` (Deflate only, minor version pinned because releases are frequent), `roxmltree`, `bcdec_rs` with our own DDS header parsing, `png`, `rayon`, `keyvalues-parser`, `winreg`, `dirs` (honours a redirected Documents folder), `windows-sys` ToolHelp for the process check, `humantime`. Rejected: `image`/`image_dds`/`dds` (heavier, unclear 24-bit BGR support), `sysinfo` (more than a name check needs), `steamlocate` (hides the root paths tests need), `quick-xml` (only needed if M4's byte-range write needs it).
+
+## 2026-11-18: descVersion is checked only against a current game log
+
+Why: the game logs the highest `ModDesc Version` it supports, but `log.txt` is only rewritten when the game runs. On the dev machine it was written by 1.10.0.0 (descVersion 100) while 1.25.1.0 is installed and mods go up to 116, so a naive check flags a third of the library. The log value is used only when its game version equals the install's `VERSION` file; mods above it get a warning, lower values are not flagged. Rejected: always trusting the log; flagging lower values (the game accepts older descVersions; exact rule unconfirmed).
+
+## 2026-11-18: Issue details carry data, not sentences
+
+Why: user-facing text lives in `src/strings.ts`. The core puts the data a message needs in `ModIssue.detail` (the original mod name, the twin's file name, the missing dependency names, the logged descVersion, a reason code for `notAMod`), and the UI words it per issue kind. The M1 mock's English details change to match in M3. Rejected: English sentences built in Rust.
+
+## 2026-11-18: Paid DLC dependencies are not flagged
+
+Why: mods may depend on `pdlc_*` names, which are DLCs, never in a mod folder, and DLC ownership is not known yet. They count as satisfied until a later milestone reads ownership. Rejected: flagging them as missing (false positives).
