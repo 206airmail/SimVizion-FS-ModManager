@@ -65,6 +65,7 @@ pub(super) fn decode(bytes: &[u8]) -> Result<Rgba, IconError> {
             "DDS dimensions {width}x{height} are outside 1..={MAX_DIMENSION}"
         )));
     }
+    super::check_pixel_budget(width, height)?;
 
     let (layout, data_start) = read_pixel_format(bytes)?;
     let data = &bytes[data_start..];

@@ -28,6 +28,7 @@ pub(super) fn decode(bytes: &[u8]) -> Result<Rgba, IconError> {
             "PNG dimensions {width}x{height} are outside 1..={MAX_DIMENSION}"
         )));
     }
+    super::check_pixel_budget(width, height)?;
 
     let mut reader = decoder.read_info().map_err(malformed)?;
     let size = reader
