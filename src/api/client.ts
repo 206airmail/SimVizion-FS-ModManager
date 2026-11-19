@@ -13,6 +13,13 @@
 //   ?mock=slowHash        checking a savegame's files takes about 5 s (progress and Cancel)
 //   ?mock=brokenSave      adds a fourth savegame that cannot be read (savegameUnreadable)
 //   ?mock=noSaves         the game has no savegames (the empty state)
+//   ?mock=updatesOn       online updates start switched on, with a check from 40 minutes ago cached
+//   ?mock=offline         update checks and installs fail with offline
+//   ?mock=rateLimited     the first check that reaches the catalog is told to wait 5 minutes
+//   ?mock=hashMismatch    installs download fully, then fail with verifyFailed
+//   ?mock=noModHubLink    ModHub installs fail with notInstallable (no download link on the page)
+// Online updates start switched off (nothing is matched, only manual links show). Turn them on in
+// Settings; a check takes about 1 s and an install about 2 s per folder.
 // Copies and removals in the mock run at about 40 MB/s, so big mods take seconds and can be cancelled.
 
 import { isTauri } from '@tauri-apps/api/core';
@@ -37,6 +44,11 @@ function createApi(): Api {
     slowHash: modes.has('slowHash'),
     brokenSave: modes.has('brokenSave'),
     noSaves: modes.has('noSaves'),
+    updatesOn: modes.has('updatesOn'),
+    offline: modes.has('offline'),
+    rateLimited: modes.has('rateLimited'),
+    hashMismatch: modes.has('hashMismatch'),
+    noModHubLink: modes.has('noModHubLink'),
   });
   if (!modes.has('empty')) return mock;
   // Spread drops nothing the interface needs: `sampleData` is a plain property.

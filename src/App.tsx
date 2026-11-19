@@ -16,6 +16,8 @@ import { useGameStatus } from './features/shell/useGameStatus';
 import { SettingsRestoreBanner } from './features/switching/SettingsRestoreBanner';
 import { useSettingsRestore } from './features/switching/useSettingsRestore';
 import { useSwitching } from './features/switching/useSwitching';
+import { SettingsScreen } from './features/updates/SettingsScreen';
+import { useUpdates } from './features/updates/useUpdates';
 import { describeError } from './lib/errors';
 import { useActionError } from './lib/useActionError';
 import { useAsync } from './lib/useAsync';
@@ -57,6 +59,8 @@ function Workspace() {
   // Copy, move and remove live here, not in a screen: their progress banner must stay while the
   // user browses other profiles.
   const fileOps = useFileOps(reloadAfterWrite);
+  // Online update checks: the automatic one runs once, after the profiles first load.
+  const updates = useUpdates({ ready: state.status === 'ready', reload: reloadAfterWrite });
 
   const selectProfile = useCallback(
     (id: string) => {
@@ -178,6 +182,8 @@ function Workspace() {
                 fileOps={fileOps}
               />
             </main>
+          ) : section === 'settings' ? (
+            <SettingsScreen updates={updates} />
           ) : section !== 'library' ? (
             <main className="sv-panel">
               <EmptyState
@@ -199,6 +205,7 @@ function Workspace() {
                 game={game}
                 switching={switching}
                 fileOps={fileOps}
+                updates={updates}
                 onCompare={() => openCompare(profile.id)}
               />
             </main>
@@ -208,7 +215,12 @@ function Workspace() {
         </div>
       </div>
 
-      <StatusBar game={game} sampleData={api.sampleData} />
+      <StatusBar
+        game={game}
+        sampleData={api.sampleData}
+        updateStatus={updates.status}
+        onOpenSettings={() => setSection('settings')}
+      />
     </div>
   );
 }
