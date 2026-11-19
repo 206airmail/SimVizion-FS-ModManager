@@ -65,6 +65,9 @@ impl SystemProbe for FakeProbe {
     fn program_data_dir(&self) -> Option<PathBuf> {
         self.program_data.clone()
     }
+    fn local_app_data_dir(&self) -> Option<PathBuf> {
+        None
+    }
 }
 
 /// A game folder with the exe and, if given, a `VERSION` file.
@@ -743,7 +746,7 @@ fn game_status_end_to_end_with_a_stale_log() {
     .unwrap();
     fs::write(user.join("log.txt"), STARTUP_LOG).unwrap();
 
-    let status = game_status(&probe);
+    let status = game_status(&probe, None);
     assert_eq!(status.game_version.as_deref(), Some("1.25.1.0"));
     assert!(status.game_running);
     assert!(!status.server_running);
@@ -762,7 +765,7 @@ fn game_status_end_to_end_with_a_stale_log() {
         STARTUP_LOG.replace("1.10.0.0 b34141", "1.25.1.0 b99"),
     )
     .unwrap();
-    assert_eq!(game_status(&probe).logged_desc_version, Some(100));
+    assert_eq!(game_status(&probe, None).logged_desc_version, Some(100));
 }
 
 #[test]
@@ -787,7 +790,7 @@ fn game_context_collects_folders_language_and_the_current_desc_version() {
     )
     .unwrap();
 
-    let ctx = game_context(&probe);
+    let ctx = game_context(&probe, None);
     assert_eq!(ctx.user_dir.as_deref(), Some(user.as_path()));
     assert_eq!(ctx.effective_mods_dir, Some(tmp.path().join("profile-a")));
     assert_eq!(ctx.default_mods_dir, Some(user.join("mods")));
@@ -795,7 +798,7 @@ fn game_context_collects_folders_language_and_the_current_desc_version() {
     assert_eq!(ctx.logged_desc_version, Some(100));
 
     // Nothing known: English, no folders.
-    let empty = game_context(&FakeProbe::default());
+    let empty = game_context(&FakeProbe::default(), None);
     assert_eq!(empty.languages, ["en"]);
     assert_eq!(empty.user_dir, None);
     assert_eq!(empty.effective_mods_dir, None);
@@ -804,7 +807,7 @@ fn game_context_collects_folders_language_and_the_current_desc_version() {
 #[test]
 fn game_status_degrades_gracefully() {
     // No game, no user folder, nothing readable.
-    let status = game_status(&FakeProbe::default());
+    let status = game_status(&FakeProbe::default(), None);
     assert_eq!(status.game_version, None);
     assert!(!status.settings_readable);
     assert!(!status.override_active);
@@ -814,7 +817,7 @@ fn game_status_degrades_gracefully() {
     // A user folder without settings: default mods folder, settings unreadable.
     let tmp = tempfile::tempdir().unwrap();
     let (probe, user) = fake_user_folder(&tmp);
-    let status = game_status(&probe);
+    let status = game_status(&probe, None);
     assert!(!status.settings_readable);
     assert_eq!(
         status.effective_mods_dir.as_deref(),
@@ -823,7 +826,7 @@ fn game_status_degrades_gracefully() {
 
     // Malformed settings are also "not readable", and never an active override.
     fs::write(user.join("gameSettings.xml"), "<a><b></a>").unwrap();
-    let status = game_status(&probe);
+    let status = game_status(&probe, None);
     assert!(!status.settings_readable);
     assert!(!status.override_active);
 }

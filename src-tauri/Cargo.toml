@@ -22,3 +22,6 @@ tauri = { version = "2", features = [] }
 tauri-plugin-dialog = "2.8.4"
 # Opens a profile folder or reveals a mod in Explorer (called from Rust only).
 tauri-plugin-opener = "2.7.3"
+# The app's own opt-in updates from the GitHub release feed, with signature checks (plan M8;
+# called from Rust only).
+tauri-plugin-updater = "2.14.1"

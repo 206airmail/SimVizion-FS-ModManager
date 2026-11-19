@@ -25,8 +25,12 @@ fn internal(e: impl std::fmt::Display) -> ApiError {
     ApiError::new(ErrorCode::Internal, Some(e.to_string()))
 }
 
+/// The game as the app sees it now, with the user folder the user chose (plan M8) if any.
 pub(crate) fn context() -> GameContext {
-    discovery::game_context(&WindowsProbe)
+    discovery::game_context(
+        &WindowsProbe,
+        crate::release::chosen_game_folder().as_deref(),
+    )
 }
 
 /// Debug builds print how long the main calls take (plan M3 verification). Ids only.
@@ -41,7 +45,13 @@ pub(crate) fn log_timing(what: &str, started: Instant) {
 
 #[tauri::command]
 pub async fn get_game_status() -> Result<GameStatus, ApiError> {
-    blocking(|| Ok(discovery::game_status(&WindowsProbe))).await
+    blocking(|| {
+        Ok(discovery::game_status(
+            &WindowsProbe,
+            crate::release::chosen_game_folder().as_deref(),
+        ))
+    })
+    .await
 }
 
 #[tauri::command]

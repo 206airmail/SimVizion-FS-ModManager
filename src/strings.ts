@@ -64,6 +64,11 @@ export const strings = {
       'This update cannot be installed by the app. Open its page to download it yourself.',
     invalidLink:
       'That is not a web address the app can use. Paste a link that starts with https:// or http://.',
+    notLaunchable:
+      'No Farming Simulator 25 installation was found that the app can start. Start the game from its launcher.',
+    invalidGameFolder:
+      'That folder is not a Farming Simulator 25 user folder. Choose the folder that holds gameSettings.xml and the mods folder.',
+    appUpdateFailed: 'The app update could not be checked or installed. Try again later.',
   } satisfies Record<ErrorCode, string>,
 
   actionFailed: {
