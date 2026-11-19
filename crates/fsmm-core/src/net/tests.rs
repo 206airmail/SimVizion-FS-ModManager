@@ -795,7 +795,7 @@ fn the_real_client_refuses_off_list_addresses_before_any_request() {
         "https://github.com.evil.com/x.zip",
         "https://www.farming-simulator.com/mod.php?mod_id=1",
     ] {
-        let result = http.download(url, &mut sink, &mut |_| {}, &cancel);
+        let result = http.download(url, None, &mut sink, &mut |_| {}, &cancel);
         assert_eq!(result, Err(NetError::NotAllowed), "{url}");
     }
     for url in [
@@ -809,11 +809,31 @@ fn the_real_client_refuses_off_list_addresses_before_any_request() {
 }
 
 #[test]
+fn the_real_client_sends_only_an_allowed_page_as_referer() {
+    let http = Http::new("0.0.0-test");
+    let cancel = AtomicBool::new(false);
+    for referer in [
+        "https://evil.example/mod.php?mod_id=1",
+        "http://www.farming-simulator.com/mod.php?mod_id=1",
+    ] {
+        let result = http.download(
+            "https://cdn1.giants-software.com/modHub/storage/00000001/FS25_A.zip",
+            Some(referer),
+            &mut Vec::new(),
+            &mut |_| {},
+            &cancel,
+        );
+        assert_eq!(result, Err(NetError::NotAllowed), "{referer}");
+    }
+}
+
+#[test]
 fn the_real_client_honours_a_cancel_before_connecting() {
     let http = Http::new("0.0.0-test");
     let cancel = AtomicBool::new(true);
     let result = http.download(
         "https://github.com/o/r/x.zip",
+        None,
         &mut Vec::new(),
         &mut |_| {},
         &cancel,
@@ -859,6 +879,7 @@ fn the_fake_web_streams_in_chunks_counts_bytes_and_cancels_between_them() {
     let total = web
         .download(
             "https://github.com/o/r/a.zip",
+            None,
             &mut sink,
             &mut |n| seen.push(n),
             &AtomicBool::new(false),
@@ -872,6 +893,7 @@ fn the_fake_web_streams_in_chunks_counts_bytes_and_cancels_between_them() {
     let mut sink = Vec::new();
     let result = web.download(
         "https://github.com/o/r/a.zip",
+        None,
         &mut sink,
         &mut |_| {},
         &AtomicBool::new(false),

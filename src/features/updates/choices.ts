@@ -4,14 +4,12 @@ import type { ModEntry, UpdateFolder, UpdatePlan } from '../../api';
 import { isOlder } from '../../lib/version';
 
 /**
- * The folders ticked when the dialog opens: the one the user is looking at, and every other
- * folder whose copy is older than the version being installed.
+ * The folders ticked when the dialog opens: only the one the user is looking at. Other folders
+ * holding the mod are listed for the user to tick; updating them is never assumed.
  */
 export function defaultFolders(plan: UpdatePlan, selectedProfileId: string): string[] {
   return plan.folders
-    .filter(
-      (folder) => folder.profileId === selectedProfileId || isOlder(folder.version, plan.toVersion),
-    )
+    .filter((folder) => folder.profileId === selectedProfileId)
     .map((folder) => folder.profileId);
 }
 

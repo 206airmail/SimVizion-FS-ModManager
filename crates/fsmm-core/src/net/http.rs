@@ -4,7 +4,7 @@
 //!   all (downloads have no overall limit, only the per-read one), the neutral User-Agent, no
 //!   proxy from the environment, https only, and **no redirects**.
 //! - Downloads follow 3xx themselves, at most 5 hops, each `Location` checked against
-//!   [`allowed_download_url`]. Pages may redirect to another allowed page (3 hops); the API never.
+//!   [`allowed_download_url`]. A ModHub download carries its mod page as `Referer`. Pages may redirect to another allowed page (3 hops); the API never.
 //! - Every body is read with a cap (lookup 4 MiB, by-hash 1 MiB, detail 1 MiB, page 2 MiB).
 //! - 429 is `RateLimited`, other non-2xx statuses are `Status(n)`, transport errors are `Offline`.
 //!   Nothing is retried.
@@ -78,6 +78,7 @@ impl Http {
         method: &str,
         url: &str,
         body: Option<&serde_json::Value>,
+        referer: Option<&str>,
         overall: Option<Duration>,
     ) -> Result<(u16, Response<Body>), NetError> {
         let result = match body {
@@ -88,9 +89,11 @@ impl Http {
                 .timeout_global(overall)
                 .build()
                 .send_json(json),
-            None => self
-                .agent
-                .get(url)
+            None => referer
+                .into_iter()
+                .fold(self.agent.get(url), |request, page| {
+                    request.header("Referer", page)
+                })
                 .config()
                 .timeout_global(overall)
                 .build()
@@ -122,7 +125,7 @@ impl Http {
         if !allowed_api_url(&url) {
             return Err(NetError::NotAllowed);
         }
-        let (status, mut response) = self.send(method, &url, body, Some(CALL_TIMEOUT))?;
+        let (status, mut response) = self.send(method, &url, body, None, Some(CALL_TIMEOUT))?;
         if status == 404 && not_found_ok {
             return Ok(None);
         }
@@ -187,7 +190,8 @@ impl Web for Http {
             if !allowed_page_url(&current) {
                 return Err(NetError::NotAllowed);
             }
-            let (status, mut response) = self.send("GET", &current, None, Some(CALL_TIMEOUT))?;
+            let (status, mut response) =
+                self.send("GET", &current, None, None, Some(CALL_TIMEOUT))?;
             let location = location_of(response.headers());
             match redirect_step(
                 status,
@@ -214,10 +218,14 @@ impl Web for Http {
     fn download(
         &self,
         url: &str,
+        referer: Option<&str>,
         sink: &mut dyn Write,
         progress: &mut dyn FnMut(u64),
         cancel: &AtomicBool,
     ) -> Result<u64, NetError> {
+        if referer.is_some_and(|page| !allowed_page_url(page)) {
+            return Err(NetError::NotAllowed);
+        }
         let mut current = url.to_string();
         let mut followed = 0;
         loop {
@@ -227,7 +235,7 @@ impl Web for Http {
             if cancel.load(Ordering::SeqCst) {
                 return Err(NetError::Cancelled);
             }
-            let (status, mut response) = self.send("GET", &current, None, None)?;
+            let (status, mut response) = self.send("GET", &current, None, referer, None)?;
             let location = location_of(response.headers());
             match redirect_step(
                 status,

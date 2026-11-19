@@ -329,6 +329,8 @@ impl Write for Sink<'_> {
 /// Where a resolved update comes from and what it must be.
 struct Resolved {
     url: String,
+    /// The ModHub page the link was found on, sent with the download.
+    referer: Option<String>,
     check: DownloadCheck,
 }
 
@@ -821,7 +823,7 @@ impl Library {
         env: &UpdateEnv<'_>,
     ) -> Result<Resolved, ApiError> {
         let now = (env.now)();
-        let (url, version, sha256, approx_size) = match source {
+        let (url, referer, version, sha256, approx_size) = match source {
             LinkKind::ModHub => {
                 let (page, id) =
                     modhub_page(found).ok_or_else(|| not_installable("noDirectDownload"))?;
@@ -832,7 +834,13 @@ impl Library {
                 let link = net::modhub_download(&html, &id)
                     .ok_or_else(|| not_installable("noDownloadLink"))?;
                 let version = link.version.or_else(|| found.latest_version.clone());
-                (link.url, version, None, link.approx_size)
+                (
+                    link.url,
+                    Some(page.to_string()),
+                    version,
+                    None,
+                    link.approx_size,
+                )
             }
             _ => {
                 self.guard_retry(now)?;
@@ -860,6 +868,7 @@ impl Library {
                 });
                 (
                     asset.download_url.clone().unwrap_or_default(),
+                    None,
                     version,
                     sha256,
                     None,
@@ -883,6 +892,7 @@ impl Library {
         }
         Ok(Resolved {
             url,
+            referer,
             check: DownloadCheck {
                 sha256,
                 min_version: version,
@@ -911,6 +921,7 @@ impl Library {
                 let mut sink = Sink { file, failed: None };
                 let result = env.web.download(
                     &resolved.url,
+                    resolved.referer.as_deref(),
                     &mut sink,
                     &mut |n| tracker.add_bytes(n),
                     cancel,

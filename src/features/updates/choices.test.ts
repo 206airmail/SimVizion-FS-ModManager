@@ -14,16 +14,17 @@ const plan: UpdatePlan = {
 };
 
 describe('defaultFolders', () => {
-  it('ticks the folder on screen and every older copy, but not a current one', () => {
-    expect(defaultFolders(plan, 'main')).toEqual(['main', 'offline']);
+  // Other folders are offered, never ticked for the user: updating them is their choice (plan M7).
+  it('ticks only the folder on screen, not the other older copies', () => {
+    expect(defaultFolders(plan, 'main')).toEqual(['main']);
   });
 
   it('keeps the folder on screen ticked even when it is the one that is current', () => {
-    expect(defaultFolders(plan, 'testing')).toEqual(['main', 'testing', 'offline']);
+    expect(defaultFolders(plan, 'testing')).toEqual(['testing']);
   });
 
-  it('ticks only older copies when the folder on screen does not hold the mod', () => {
-    expect(defaultFolders(plan, 'elsewhere')).toEqual(['main', 'offline']);
+  it('ticks nothing when the folder on screen does not hold the mod', () => {
+    expect(defaultFolders(plan, 'elsewhere')).toEqual([]);
   });
 });
 
