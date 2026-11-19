@@ -5,23 +5,37 @@ import type { GameStatus } from './types/GameStatus';
 import type { ModEntry } from './types/ModEntry';
 import type { Profile } from './types/Profile';
 import type { ScanProgress } from './types/ScanProgress';
+import type { ClashChoice } from './types/ClashChoice';
+import type { OpProgress } from './types/OpProgress';
+import type { OpResult } from './types/OpResult';
 import type { SwitchResult } from './types/SwitchResult';
+import type { TransferMode } from './types/TransferMode';
+import type { TransferPlan } from './types/TransferPlan';
 
 export type { ApiError } from './types/ApiError';
+export type { ClashChoice } from './types/ClashChoice';
 export type { Dependency } from './types/Dependency';
 export type { ErrorCode } from './types/ErrorCode';
 export type { GameStatus } from './types/GameStatus';
+export type { ItemFailure } from './types/ItemFailure';
 export type { IssueKind } from './types/IssueKind';
 export type { ModEntry } from './types/ModEntry';
 export type { ModFormat } from './types/ModFormat';
 export type { ModIssue } from './types/ModIssue';
 export type { ModKind } from './types/ModKind';
 export type { ModSource } from './types/ModSource';
+export type { ModSummary } from './types/ModSummary';
+export type { OpProgress } from './types/OpProgress';
+export type { OpResult } from './types/OpResult';
 export type { Profile } from './types/Profile';
 export type { ScanProgress } from './types/ScanProgress';
 export type { ScanSummary } from './types/ScanSummary';
 export type { Severity } from './types/Severity';
 export type { SwitchResult } from './types/SwitchResult';
+export type { TransferClash } from './types/TransferClash';
+export type { TransferItem } from './types/TransferItem';
+export type { TransferMode } from './types/TransferMode';
+export type { TransferPlan } from './types/TransferPlan';
 export type { UpdateState } from './types/UpdateState';
 
 /**
@@ -53,4 +67,29 @@ export interface Api {
   latestSettingsBackup(): Promise<string | null>;
   /** Replaces an unreadable gameSettings.xml with the newest backup. */
   restoreSettingsBackup(): Promise<void>;
+  /** Works out a copy or move (items, clashes, space) without writing anything. */
+  planTransfer(
+    fromProfileId: string,
+    modIds: string[],
+    toProfileId: string,
+    mode: TransferMode,
+  ): Promise<TransferPlan>;
+  /** Carries out a plan; clashes without a choice are skipped. Refused while the game runs. */
+  executeTransfer(
+    planId: string,
+    choices: ClashChoice[],
+    onProgress?: (progress: OpProgress) => void,
+  ): Promise<OpResult>;
+  /** Sends mods to the Recycle Bin; never deletes permanently. */
+  removeMods(
+    profileId: string,
+    modIds: string[],
+    onProgress?: (progress: OpProgress) => void,
+  ): Promise<OpResult>;
+  /** Stops the running copy, move or remove after the current chunk. */
+  cancelOperation(): Promise<void>;
+  /** Changes a profile's display name; the folder is untouched. */
+  renameProfile(profileId: string, name: string): Promise<void>;
+  /** Removes a profile from the list; the folder is untouched. */
+  removeProfile(profileId: string): Promise<void>;
 }

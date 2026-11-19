@@ -70,7 +70,7 @@ fn profile_for(
 }
 
 /// The camelCase name of an error code, as stored in the journal's `result`.
-fn code_name(code: ErrorCode) -> String {
+pub(super) fn code_name(code: ErrorCode) -> String {
     serde_json::to_value(code)
         .ok()
         .and_then(|v| v.as_str().map(str::to_string))

@@ -13,13 +13,32 @@
 //   undo_switch         { opId }                            -> SwitchResult
 //   latest_settings_backup                                  -> string | null (ISO time)
 //   restore_settings_backup                                 -> null
+//   plan_transfer      { fromProfileId, modIds, toProfileId, mode } -> TransferPlan
+//   execute_transfer   { planId, choices, onProgress: Channel<OpProgress> } -> OpResult
+//   remove_mods        { profileId, modIds, onProgress: Channel<OpProgress> } -> OpResult
+//   cancel_operation                                        -> null
+//   rename_profile     { profileId, name }                  -> null
+//   remove_profile     { profileId }                        -> null
 //
 // A failing command rejects with an ApiError object `{ code, detail }`.
 // Thumbnails are not commands: ModEntry.icon is an http://thumb.localhost/... URL served by a
 // custom protocol in src-tauri.
 
 import { Channel, invoke } from '@tauri-apps/api/core';
-import type { Api, ApiError, GameStatus, ModEntry, Profile, ScanProgress, SwitchResult } from '.';
+import type {
+  Api,
+  ApiError,
+  ClashChoice,
+  GameStatus,
+  ModEntry,
+  OpProgress,
+  OpResult,
+  Profile,
+  ScanProgress,
+  SwitchResult,
+  TransferMode,
+  TransferPlan,
+} from '.';
 import { ApiFailure, isErrorCode } from '../lib/errors';
 
 function isApiError(value: unknown): value is ApiError {
@@ -70,6 +89,31 @@ export function createTauriApi(): Api {
     latestSettingsBackup: () => call<string | null>('latest_settings_backup'),
     async restoreSettingsBackup() {
       await call('restore_settings_backup');
+    },
+    planTransfer: (
+      fromProfileId: string,
+      modIds: string[],
+      toProfileId: string,
+      mode: TransferMode,
+    ) => call<TransferPlan>('plan_transfer', { fromProfileId, modIds, toProfileId, mode }),
+    executeTransfer(planId: string, choices: ClashChoice[], onProgress?: (p: OpProgress) => void) {
+      const channel = new Channel<OpProgress>();
+      channel.onmessage = (progress) => onProgress?.(progress);
+      return call<OpResult>('execute_transfer', { planId, choices, onProgress: channel });
+    },
+    removeMods(profileId: string, modIds: string[], onProgress?: (p: OpProgress) => void) {
+      const channel = new Channel<OpProgress>();
+      channel.onmessage = (progress) => onProgress?.(progress);
+      return call<OpResult>('remove_mods', { profileId, modIds, onProgress: channel });
+    },
+    async cancelOperation() {
+      await call('cancel_operation');
+    },
+    async renameProfile(profileId: string, name: string) {
+      await call('rename_profile', { profileId, name });
+    },
+    async removeProfile(profileId: string) {
+      await call('remove_profile', { profileId });
     },
   };
 }

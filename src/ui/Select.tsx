@@ -128,7 +128,7 @@ export function Select<T extends string>({
       >
         {prefix && <span className="sv-select__prefix">{prefix}</span>}
         <span className="sv-select__value sv-truncate">{selected?.label}</span>
-        <Icon icon={ChevronDown} size={14} className="sv-select__chevron" />
+        <Icon icon={ChevronDown} size={16} className="sv-select__chevron" />
       </button>
       {open && (
         <ul id={listId} className="sv-select__menu" role="listbox" aria-label={label}>
@@ -144,7 +144,7 @@ export function Select<T extends string>({
               onClick={() => commit(index)}
             >
               <span className="sv-select__check">
-                {option.value === value && <Icon icon={Check} size={14} />}
+                {option.value === value && <Icon icon={Check} size={16} />}
               </span>
               <span className="sv-select__option-label sv-truncate">{option.label}</span>
               {option.hint && <span className="sv-select__option-hint sv-num">{option.hint}</span>}

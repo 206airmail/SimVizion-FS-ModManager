@@ -211,8 +211,124 @@ pub enum ErrorCode {
     NothingToUndo,
     /// No backup of `gameSettings.xml` exists to restore.
     NoBackup,
+    /// Windows would delete the item permanently instead of recycling it (too large for the
+    /// Recycle Bin, or a drive without one), so it was left in place.
+    RecycleUnavailable,
+    /// The target drive does not have room for the copy; nothing was written.
+    NotEnoughSpace,
+    /// Another file operation is still running.
+    Busy,
+    /// The user cancelled; items not finished were left as they were.
+    Cancelled,
+    /// A mod or the target folder changed between planning and doing the operation.
+    TargetChanged,
+    /// The active folder and the game's default folder cannot be removed from the list.
+    CannotRemoveProfile,
     /// Anything unexpected; `detail` holds a technical message for a bug report.
     Internal,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub enum TransferMode {
+    Copy,
+    Move,
+}
+
+/// The facts shown side by side when two mods with the same name meet.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct ModSummary {
+    pub file_name: String,
+    pub version: String,
+    #[ts(type = "number")]
+    pub size_bytes: u64,
+    /// ISO 8601 timestamp.
+    pub modified: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct TransferItem {
+    pub mod_id: String,
+    pub mod_name: String,
+    #[ts(type = "number")]
+    pub size_bytes: u64,
+}
+
+/// A mod being transferred whose name already exists in the target folder.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct TransferClash {
+    pub mod_name: String,
+    pub incoming: ModSummary,
+    pub existing: ModSummary,
+}
+
+/// What a copy or move would do, worked out before anything is written.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct TransferPlan {
+    pub plan_id: String,
+    pub from_profile_id: String,
+    pub to_profile_id: String,
+    pub mode: TransferMode,
+    pub items: Vec<TransferItem>,
+    pub clashes: Vec<TransferClash>,
+    /// Bytes that would be written to the target drive (0 for a same-drive move).
+    #[ts(type = "number")]
+    pub total_bytes: u64,
+    /// Free space on the target drive.
+    #[ts(type = "number")]
+    pub free_bytes: u64,
+}
+
+/// The user's answer for one clash: replace the existing mod (it goes to the Recycle Bin) or
+/// skip the incoming one.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct ClashChoice {
+    pub mod_name: String,
+    pub replace: bool,
+}
+
+/// Progress of a running file operation, streamed to the frontend.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct OpProgress {
+    #[ts(type = "number")]
+    pub done_bytes: u64,
+    #[ts(type = "number")]
+    pub total_bytes: u64,
+    /// File name of the mod being worked on.
+    pub current: Option<String>,
+    pub done_items: u32,
+    pub total_items: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct ItemFailure {
+    pub mod_name: String,
+    pub code: ErrorCode,
+}
+
+/// The outcome of a copy, move or remove, item by item (by mod name).
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct OpResult {
+    pub done: Vec<String>,
+    pub skipped: Vec<String>,
+    pub failed: Vec<ItemFailure>,
 }
 
 /// The outcome of switching the active mod folder (or undoing a switch).

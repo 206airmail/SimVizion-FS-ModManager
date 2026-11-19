@@ -278,6 +278,30 @@
   font-size: 12px;
 }
 
+/* The profile menu button: out of sight until the row is hovered or holds focus (or its menu is
+   open), and the row makes room for it so names never run underneath. */
+.mm-profile-row {
+  position: relative;
+}
+.mm-profile-row__menu {
+  position: absolute;
+  top: 50%;
+  right: 6px;
+  opacity: 0;
+  transform: translateY(-50%);
+  transition: opacity 100ms ease-out;
+}
+.mm-profile-row:hover .mm-profile-row__menu,
+.mm-profile-row:focus-within .mm-profile-row__menu,
+.mm-profile-row[data-menu-open] .mm-profile-row__menu {
+  opacity: 1;
+}
+.mm-profile-row:hover .mm-profile,
+.mm-profile-row:focus-within .mm-profile,
+.mm-profile-row[data-menu-open] .mm-profile {
+  padding-right: 40px;
+}
+
 .mm-rail__totals {
   flex: none;
   margin: 0 6px;

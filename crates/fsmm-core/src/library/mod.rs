@@ -30,6 +30,9 @@ use crate::scan::{self, ModRecord};
 use crate::store::{path_key, CachedMod, FileStamp, Store, StoreError, StoredProfile};
 
 mod switching;
+mod transfer;
+
+pub use transfer::OpEnv;
 #[cfg(test)]
 mod tests;
 
@@ -63,6 +66,8 @@ pub struct Library {
     /// The context of the last call that had one: `mod_path` and `thumbnail` take only ids but
     /// may have to scan a profile, which needs the languages and the logged descVersion.
     last_ctx: Mutex<Option<GameContext>>,
+    /// The busy and cancel flags and the plans of file operations (plan M5).
+    transfer: transfer::TransferState,
     #[cfg(test)]
     decodes: std::sync::atomic::AtomicUsize,
 }
@@ -76,6 +81,7 @@ impl Library {
             thumbnail_base: thumbnail_base.trim_end_matches('/').to_string(),
             scans: RwLock::new(HashMap::new()),
             last_ctx: Mutex::new(None),
+            transfer: transfer::TransferState::default(),
             #[cfg(test)]
             decodes: std::sync::atomic::AtomicUsize::new(0),
         }

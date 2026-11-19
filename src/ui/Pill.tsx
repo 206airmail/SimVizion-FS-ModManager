@@ -30,7 +30,7 @@ export function Pill({
         className,
       )}
     >
-      {icon && <Icon icon={icon} size={12} className="sv-pill__icon" />}
+      {icon && <Icon icon={icon} size={14} className="sv-pill__icon" />}
       {children}
     </span>
   );
