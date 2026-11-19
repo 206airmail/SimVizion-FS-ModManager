@@ -76,3 +76,32 @@ describe('strings.readingMods', () => {
     expect(strings.states.readingMods(0, 1)).toBe('Reading 0 of 1 mod');
   });
 });
+
+describe('strings.savegames', () => {
+  const t = strings.savegames;
+
+  it('shows play time as hours and minutes', () => {
+    expect(t.playTime(0)).toBe('0 min');
+    expect(t.playTime(59)).toBe('59 min');
+    expect(t.playTime(60)).toBe('1 h 0 min');
+    expect(t.playTime(14872)).toBe(`${(247).toLocaleString()} h 52 min`);
+    expect(t.playTime(null)).toBe('–');
+  });
+
+  it('shows a large money value with separators, and a missing one as a dash', () => {
+    expect(t.money(48215730)).toBe((48215730).toLocaleString());
+    expect(t.money(null)).toBe('–');
+  });
+
+  it('words the copy buttons and the summary', () => {
+    expect(t.copyFrom(12, 'Main Farm')).toBe('Copy 12 from Main Farm');
+    expect(t.summary(477, 1)).toBe('477 mods, 1 required');
+    expect(t.summary(1, 0)).toBe('1 mod');
+  });
+
+  it('has wording for every state, and for the two new error codes', () => {
+    for (const state of Object.values(t.states)) expect(state).toBeTruthy();
+    expect(strings.errors.savegameMissing).toBeTruthy();
+    expect(strings.errors.savegameUnreadable).toBeTruthy();
+  });
+});
