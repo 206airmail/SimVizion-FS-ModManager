@@ -19,6 +19,14 @@ export interface StatusBarProps {
 export function StatusBar({ game, sampleData, updateStatus, onOpenSettings }: StatusBarProps) {
   const t = strings.status;
   const updatesHint = strings.updates.status.hint;
+  const installText =
+    game === null
+      ? null
+      : game.userDirSource === 'none'
+        ? t.noGameFolder
+        : game.store !== null
+          ? t.store(strings.gameFolder.stores[game.store])
+          : null;
   return (
     <footer className="mm-statusbar">
       {game && (
@@ -37,6 +45,15 @@ export function StatusBar({ game, sampleData, updateStatus, onOpenSettings }: St
             />
             {game.settingsReadable ? t.settingsOk : t.settingsMissing}
           </span>
+          {/* Which install the app found; "not found" when there is no user folder at all. */}
+          {installText !== null && (
+            <>
+              <span className="mm-statusbar__divider mm-statusbar__optional" />
+              <span className="mm-statusbar__item mm-statusbar__optional sv-truncate">
+                {installText}
+              </span>
+            </>
+          )}
           {/* An unreadable file says nothing about the override, so claim nothing. */}
           {game.settingsReadable && (
             <>

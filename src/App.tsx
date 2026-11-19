@@ -1,23 +1,29 @@
-import { Construction, FolderX } from 'lucide-react';
-import { useCallback, useState } from 'react';
+import { FolderX } from 'lucide-react';
+import { lazy, Suspense, useCallback, useRef, useState } from 'react';
 import type { Profile } from './api';
 import { api } from './api/client';
 import { ActionErrorBanner } from './features/ActionErrorBanner';
+import { AppUpdateBanner } from './features/appUpdate/AppUpdateBanner';
+import { useAppUpdates } from './features/appUpdate/useAppUpdates';
 import { CompareScreen } from './features/compare/CompareScreen';
 import { FileOpsNotices } from './features/files/FileOpsNotices';
 import { useFileOps } from './features/files/useFileOps';
-import { Gallery } from './features/gallery/Gallery';
-import { LibraryScreen } from './features/library/LibraryScreen';
+import { useGameFolder } from './features/gameFolder/useGameFolder';
+import { HealthScreen } from './features/health/HealthScreen';
+import { LibraryScreen, type LibraryFocus } from './features/library/LibraryScreen';
 import { SavegamesScreen } from './features/savegames/SavegamesScreen';
 import { AppHeader } from './features/shell/AppHeader';
 import { ProfileRail, type ProfileActions, type Section } from './features/shell/ProfileRail';
 import { StatusBar } from './features/shell/StatusBar';
 import { useGameStatus } from './features/shell/useGameStatus';
+import { useLaunch } from './features/shell/useLaunch';
 import { SettingsRestoreBanner } from './features/switching/SettingsRestoreBanner';
 import { useSettingsRestore } from './features/switching/useSettingsRestore';
 import { useSwitching } from './features/switching/useSwitching';
 import { SettingsScreen } from './features/updates/SettingsScreen';
 import { useUpdates } from './features/updates/useUpdates';
+import { workspaceView } from './features/welcome/view';
+import { WelcomeScreen } from './features/welcome/WelcomeScreen';
 import { describeError } from './lib/errors';
 import { useActionError } from './lib/useActionError';
 import { useAsync } from './lib/useAsync';
@@ -27,11 +33,23 @@ import { EmptyState } from './ui/Feedback';
 
 const loadProfiles = () => api.listProfiles();
 
-/** `#gallery` shows every primitive in every state, for design review. */
-const showGallery = window.location.hash === '#gallery';
+/**
+ * `#gallery` shows every primitive in every state, for design review. It is loaded on demand and
+ * only where `__SAMPLE_BUILD__` is true, so the release bundle holds neither it nor its styles.
+ */
+const Gallery = __SAMPLE_BUILD__
+  ? lazy(() => import('./features/gallery/Gallery').then((module) => ({ default: module.Gallery })))
+  : null;
+const showGallery = Gallery !== null && window.location.hash === '#gallery';
 
 export function App() {
-  return showGallery ? <Gallery /> : <Workspace />;
+  return showGallery ? (
+    <Suspense fallback={null}>
+      <Gallery />
+    </Suspense>
+  ) : (
+    <Workspace />
+  );
 }
 
 function Workspace() {
@@ -61,6 +79,15 @@ function Workspace() {
   const fileOps = useFileOps(reloadAfterWrite);
   // Online update checks: the automatic one runs once, after the profiles first load.
   const updates = useUpdates({ ready: state.status === 'ready', reload: reloadAfterWrite });
+  // The app's own updates: the same once-per-start check, with its banner above the screens.
+  const appUpdates = useAppUpdates({ ready: state.status === 'ready' });
+  // Launch game, and the game's user folder (chosen on the first-run screen or in Settings).
+  const launch = useLaunch(game, refreshGame);
+  const gameFolder = useGameFolder(reloadAfterWrite);
+  // A mod the Health screen asked the library to bring up; `id` tells one request from the next.
+  const [libraryFocus, setLibraryFocus] = useState<LibraryFocus | null>(null);
+  const focusRequests = useRef(0);
+  const clearLibraryFocus = useCallback(() => setLibraryFocus(null), []);
 
   const selectProfile = useCallback(
     (id: string) => {
@@ -77,6 +104,16 @@ function Workspace() {
     setSection('compare');
   }, []);
 
+  const openMod = useCallback(
+    (profileId: string, modId: string) => {
+      clearSwitching();
+      setChosenProfileId(profileId);
+      setSection('library');
+      setLibraryFocus({ id: ++focusRequests.current, profileId, modId });
+    },
+    [clearSwitching],
+  );
+
   const addProfile = useCallback(
     () =>
       runAddFolder(async () => {
@@ -90,6 +127,7 @@ function Workspace() {
   );
 
   const profiles = state.status === 'ready' ? state.data : [];
+  const view = workspaceView(state.status === 'ready', profiles.length, game);
   const activeProfile = profiles.find((profile) => profile.isActive) ?? null;
   // Until the user picks one, show the profile the game is using.
   const profile =
@@ -127,7 +165,7 @@ function Workspace() {
 
   return (
     <div className="mm-app">
-      <AppHeader activeProfile={activeProfile} game={game} />
+      <AppHeader activeProfile={activeProfile} game={game} launch={launch} />
 
       <div className="mm-workspace">
         <ProfileRail
@@ -143,6 +181,7 @@ function Workspace() {
         />
 
         <div className="mm-content">
+          <AppUpdateBanner appUpdates={appUpdates} />
           <SettingsRestoreBanner restore={settingsRestore} />
           <FileOpsNotices fileOps={fileOps} />
           {addFolder.message !== null && (
@@ -150,6 +189,20 @@ function Workspace() {
               title={strings.actionFailed.addFolder}
               message={addFolder.message}
               onDismiss={addFolder.dismiss}
+            />
+          )}
+          {launch.error !== null && (
+            <ActionErrorBanner
+              title={strings.actionFailed.launch}
+              message={launch.error}
+              onDismiss={launch.dismissError}
+            />
+          )}
+          {gameFolder.failure !== null && section !== 'settings' && (
+            <ActionErrorBanner
+              title={gameFolder.failure.title}
+              message={gameFolder.failure.message}
+              onDismiss={gameFolder.dismiss}
             />
           )}
           {state.status === 'error' ? (
@@ -180,24 +233,21 @@ function Workspace() {
                 defaultProfileId={activeProfile?.id ?? null}
                 game={game}
                 fileOps={fileOps}
+                onOpenSettings={() => setSection('settings')}
               />
             </main>
           ) : section === 'settings' ? (
-            <SettingsScreen updates={updates} />
-          ) : section !== 'library' ? (
-            <main className="sv-panel">
-              <EmptyState
-                icon={Construction}
-                title={strings.states.notBuiltTitle(strings.rail[section])}
-                description={strings.states.notBuiltText}
-                action={
-                  <Button onClick={() => setSection('library')}>
-                    {strings.states.backToLibrary}
-                  </Button>
-                }
-              />
+            <SettingsScreen
+              updates={updates}
+              appUpdates={appUpdates}
+              game={game}
+              gameFolder={gameFolder}
+            />
+          ) : section === 'health' ? (
+            <main className="mm-main">
+              <HealthScreen revision={fileOps.revision + updates.revision} onOpenMod={openMod} />
             </main>
-          ) : profile ? (
+          ) : view === 'ready' && profile ? (
             <main className="mm-main">
               <LibraryScreen
                 profile={profile}
@@ -206,11 +256,27 @@ function Workspace() {
                 switching={switching}
                 fileOps={fileOps}
                 updates={updates}
+                appUpdates={appUpdates}
+                focus={libraryFocus}
+                onFocusApplied={clearLibraryFocus}
                 onCompare={() => openCompare(profile.id)}
               />
             </main>
+          ) : view === 'noGameFolder' || view === 'noFolders' ? (
+            <WelcomeScreen
+              kind={view}
+              busy={gameFolder.busy}
+              onChooseGameFolder={gameFolder.choose}
+              onAddFolder={() => void addProfile()}
+            />
           ) : (
-            <main className="sv-panel" aria-busy="true" />
+            <main className="sv-panel" aria-busy="true">
+              <div
+                className="mm-loading"
+                role="status"
+                aria-label={strings.states.loadingProfiles}
+              />
+            </main>
           )}
         </div>
       </div>
