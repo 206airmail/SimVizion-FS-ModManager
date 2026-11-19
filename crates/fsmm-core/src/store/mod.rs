@@ -56,6 +56,19 @@ const LIBRARY_MIGRATIONS: &[&str] = &[
         result      TEXT NOT NULL
     );
 ",
+    // File operations (plan M5) get their own journal: `ops` rows describe override states and
+    // `latest_ok_op` feeds Undo, which a file operation must never become.
+    "
+    CREATE TABLE file_ops (
+        id      INTEGER PRIMARY KEY,
+        at      INTEGER NOT NULL,
+        kind    TEXT NOT NULL,
+        plan_id TEXT,
+        source  TEXT NOT NULL,
+        target  TEXT,
+        result  TEXT NOT NULL
+    );
+",
 ];
 
 /// Migrations of `cache.sqlite`. The cache is disposable, so a file that fails to open or
@@ -137,6 +150,35 @@ pub struct NewOp<'a> {
     pub from: &'a ModsOverride,
     pub to: &'a ModsOverride,
     pub backup_file: Option<&'a str>,
+    pub result: &'a str,
+}
+
+/// One journaled step of a copy, move or remove (plan M5): one row per item attempted, and one
+/// for each existing mod a replace sent to the Recycle Bin. Paths and codes only.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StoredFileOp {
+    /// Short stable id, `f<rowid>`.
+    pub id: String,
+    /// Unix seconds.
+    pub at: i64,
+    /// `copy`, `move` or `recycle`.
+    pub kind: String,
+    /// The transfer plan this belonged to; none for a remove.
+    pub plan_id: Option<String>,
+    pub source: PathBuf,
+    /// Where a copy or move put the mod; none for a recycle.
+    pub target: Option<PathBuf>,
+    /// `ok`, or the camelCase error code of the failed item.
+    pub result: String,
+}
+
+/// What [`Store::add_file_op`] needs to journal a file operation.
+#[derive(Debug, Clone, Copy)]
+pub struct NewFileOp<'a> {
+    pub kind: &'a str,
+    pub plan_id: Option<&'a str>,
+    pub source: &'a Path,
+    pub target: Option<&'a Path>,
     pub result: &'a str,
 }
 
@@ -292,6 +334,73 @@ impl Store {
             [&key],
             profile_from_row,
         )?)
+    }
+
+    /// Changes a profile's display name. Returns false when there is no such profile.
+    pub fn rename_profile(&self, id: &str, name: &str) -> Result<bool, StoreError> {
+        let Some(rowid) = profile_rowid(id) else {
+            return Ok(false);
+        };
+        let conn = lock(&self.library);
+        let changed = conn.execute(
+            "UPDATE profiles SET name = ?1 WHERE id = ?2",
+            params![name, rowid],
+        )?;
+        Ok(changed > 0)
+    }
+
+    /// Removes a profile from the registry; its folder is not touched. Returns false when there
+    /// is no such profile.
+    pub fn remove_profile(&self, id: &str) -> Result<bool, StoreError> {
+        let Some(rowid) = profile_rowid(id) else {
+            return Ok(false);
+        };
+        let conn = lock(&self.library);
+        let changed = conn.execute("DELETE FROM profiles WHERE id = ?1", [rowid])?;
+        Ok(changed > 0)
+    }
+
+    // ---- journal of file operations (library.sqlite) ----
+
+    /// Appends a file-operation journal row and returns its id (`f<rowid>`).
+    pub fn add_file_op(&self, op: &NewFileOp<'_>) -> Result<String, StoreError> {
+        let at = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_or(0, |d| i64::try_from(d.as_secs()).unwrap_or(i64::MAX));
+        let conn = lock(&self.library);
+        conn.execute(
+            "INSERT INTO file_ops (at, kind, plan_id, source, target, result) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            params![
+                at,
+                op.kind,
+                op.plan_id,
+                op.source.to_string_lossy(),
+                op.target.map(|t| t.to_string_lossy().into_owned()),
+                op.result
+            ],
+        )?;
+        Ok(format!("f{}", conn.last_insert_rowid()))
+    }
+
+    /// Every file-operation journal row, oldest first.
+    pub fn file_ops(&self) -> Result<Vec<StoredFileOp>, StoreError> {
+        let conn = lock(&self.library);
+        let mut stmt = conn.prepare_cached(
+            "SELECT id, at, kind, plan_id, source, target, result FROM file_ops ORDER BY id",
+        )?;
+        let rows = stmt.query_map([], |row| {
+            Ok(StoredFileOp {
+                id: format!("f{}", row.get::<_, i64>(0)?),
+                at: row.get(1)?,
+                kind: row.get(2)?,
+                plan_id: row.get(3)?,
+                source: PathBuf::from(row.get::<_, String>(4)?),
+                target: row.get::<_, Option<String>>(5)?.map(PathBuf::from),
+                result: row.get(6)?,
+            })
+        })?;
+        Ok(rows.collect::<Result<Vec<_>, _>>()?)
     }
 
     // ---- journal of writes to gameSettings.xml (library.sqlite) ----
@@ -573,6 +682,11 @@ fn profile_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<StoredProfile> 
         name: row.get(1)?,
         path: PathBuf::from(row.get::<_, String>(2)?),
     })
+}
+
+/// The row id inside a profile id (`p<rowid>`).
+fn profile_rowid(id: &str) -> Option<i64> {
+    id.strip_prefix('p')?.parse().ok()
 }
 
 fn op_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<StoredOp> {
