@@ -1177,6 +1177,11 @@ fn a_github_update_replaces_the_old_zip_through_the_recycle_bin_and_is_journaled
     // GitHub: one detail, one download, no page.
     assert_eq!(t.catalog.details(), ["cp"]);
     assert_eq!(t.web.downloads(), [GH_URL]);
+    assert_eq!(
+        t.web.download_referers(),
+        [None],
+        "GitHub needs no referring page"
+    );
     assert!(t.web.pages_fetched().is_empty());
 
     // The journal holds the recycle of the old zip and the update, paths and codes only.
@@ -1423,6 +1428,8 @@ fn a_modhub_update_goes_through_the_page_link() {
     assert_eq!(fs::read(t.a.join("FS25_Courseplay.zip")).unwrap(), file);
     assert_eq!(t.web.pages_fetched(), [MH_PAGE]);
     assert_eq!(t.web.downloads(), [MH_ZIP]);
+    // ModHub's CDN serves a file only to its page, as a click on DOWNLOAD there would.
+    assert_eq!(t.web.download_referers(), [Some(MH_PAGE.to_string())]);
     assert!(
         t.catalog.details().is_empty(),
         "ModHub needs no catalog detail"

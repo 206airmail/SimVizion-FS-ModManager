@@ -137,11 +137,14 @@ pub trait Catalog: Send + Sync {
 pub trait Web: Send + Sync {
     /// The HTML of an allowed page (a ModHub mod page), capped in size.
     fn fetch_page(&self, url: &str) -> Result<String, NetError>;
-    /// Streams an allowed download into `sink`, reporting bytes as they arrive and checking
-    /// `cancel` between chunks. Returns the bytes written.
+    /// Streams an allowed download into `sink`, reporting the bytes of each chunk as it arrives
+    /// and checking `cancel` between chunks. Returns the bytes written. `referer` is the
+    /// [`allowed_page_url`] the link was found on, sent as `Referer` (ModHub's CDN serves a
+    /// file only to its mod page, as a click on DOWNLOAD there would); any other is refused.
     fn download(
         &self,
         url: &str,
+        referer: Option<&str>,
         sink: &mut dyn Write,
         progress: &mut dyn FnMut(u64),
         cancel: &AtomicBool,

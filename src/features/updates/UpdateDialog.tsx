@@ -31,8 +31,8 @@ export interface UpdateDialogProps {
 
 /**
  * The Update dialog: asks the core what the update would do (no network), then lists the
- * folders that hold the mod, each with its version and a checkbox. The folder on screen and
- * every older copy start ticked. When the update cannot be installed, it says why and offers
+ * folders that hold the mod, each with its version and a checkbox. Only the folder on screen
+ * starts ticked. When the update cannot be installed, it says why and offers
  * the mod's page buttons instead.
  */
 export function UpdateDialog({

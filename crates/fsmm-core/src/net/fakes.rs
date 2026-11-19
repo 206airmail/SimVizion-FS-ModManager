@@ -197,6 +197,8 @@ pub struct FakeWeb {
     pages: Mutex<HashMap<String, String>>,
     payloads: Mutex<HashMap<String, Vec<u8>>>,
     calls: Mutex<Vec<WebCall>>,
+    /// The `referer` of each download, in order.
+    referers: Mutex<Vec<Option<String>>>,
     errors: Mutex<VecDeque<NetError>>,
     /// Bytes handed to the sink per step; progress and the cancel flag are per step.
     chunk: usize,
@@ -212,6 +214,7 @@ impl Default for FakeWeb {
             pages: Mutex::default(),
             payloads: Mutex::default(),
             calls: Mutex::default(),
+            referers: Mutex::default(),
             errors: Mutex::default(),
             chunk: 1024,
             cancel_after_chunks: Mutex::default(),
@@ -269,6 +272,10 @@ impl FakeWeb {
             .collect()
     }
 
+    pub fn download_referers(&self) -> Vec<Option<String>> {
+        lock(&self.referers).clone()
+    }
+
     pub fn pages_fetched(&self) -> Vec<String> {
         self.calls()
             .into_iter()
@@ -295,11 +302,13 @@ impl Web for FakeWeb {
     fn download(
         &self,
         url: &str,
+        referer: Option<&str>,
         sink: &mut dyn Write,
         progress: &mut dyn FnMut(u64),
         cancel: &AtomicBool,
     ) -> Result<u64, NetError> {
         lock(&self.calls).push(WebCall::Download(url.to_string()));
+        lock(&self.referers).push(referer.map(str::to_string));
         if let Some(error) = lock(&self.errors).pop_front() {
             return Err(error);
         }
