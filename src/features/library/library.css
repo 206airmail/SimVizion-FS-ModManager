@@ -358,6 +358,31 @@
   flex: none;
   margin: 8px 12px;
 }
+.mm-library__notice + .mm-library__notice {
+  margin-top: 0;
+}
+
+/* The button's tooltip anchor must not shrink with the path next to it. */
+.mm-library__title-row > .sv-tooltip-anchor:has(.mm-set-active) {
+  flex: none;
+}
+/* Set as active while the game or server runs: it stays focusable (so the reason can be read)
+   but looks like any disabled button. aria-disabled has no styling of its own in the primitive. */
+.sv-button.mm-set-active[aria-disabled='true'],
+.sv-button.mm-set-active[aria-disabled='true']:hover,
+.sv-button.mm-set-active[aria-disabled='true']:active {
+  background: var(--sv-disabled-bg);
+  border-color: var(--sv-disabled-border);
+  color: var(--sv-disabled-text);
+  box-shadow: none;
+  cursor: not-allowed;
+}
+.sv-button.mm-set-active[aria-disabled='true']:focus-visible {
+  border-color: var(--sv-teal);
+  outline: none;
+  box-shadow: none;
+}
+
 .mm-inspector__notice {
   flex: none;
   margin: 0 8px 8px;

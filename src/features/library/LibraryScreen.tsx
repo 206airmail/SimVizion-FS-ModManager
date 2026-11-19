@@ -26,6 +26,10 @@ import { SegmentedControl } from '../../ui/SegmentedControl';
 import { Select, type SelectOption } from '../../ui/Select';
 import { Tooltip } from '../../ui/Tooltip';
 import { ActionErrorBanner } from '../ActionErrorBanner';
+import { switchBlockedReason } from '../switching/blocked';
+import { SetActiveButton } from '../switching/SetActiveButton';
+import { SwitchNotices } from '../switching/SwitchNotices';
+import type { SwitchingController } from '../switching/useSwitching';
 import type { CollectionProps } from './collection';
 import { Inspector } from './Inspector';
 import { kindOrder } from './labels';
@@ -61,11 +65,12 @@ export interface LibraryScreenProps {
   profile: Profile;
   profiles: readonly Profile[];
   game: GameStatus | null;
+  switching: SwitchingController;
 }
 
 const t = strings.library;
 
-export function LibraryScreen({ profile, profiles, game }: LibraryScreenProps) {
+export function LibraryScreen({ profile, profiles, game, switching }: LibraryScreenProps) {
   const [query, setQuery] = useState<LibraryQuery>(defaultQuery);
   const [view, setView] = useState<View>('list');
   // The docked preference and the temporary drawer are separate, so a narrow window
@@ -180,7 +185,14 @@ export function LibraryScreen({ profile, profiles, game }: LibraryScreenProps) {
               <span className="mm-library__path sv-truncate">{tailPath(profile.path)}</span>
             </Tooltip>
             <span className="mm-library__gap" />
-            {!profile.isActive && <Button variant="primary">{t.setActive}</Button>}
+            {!profile.isActive && (
+              <SetActiveButton
+                blockedReason={switchBlockedReason(game)}
+                busy={switching.busy}
+                label={t.setActive}
+                onPress={() => void switching.setActive(profile)}
+              />
+            )}
             <IconButton
               icon={FolderOpen}
               label={t.openFolder}
@@ -258,6 +270,11 @@ export function LibraryScreen({ profile, profiles, game }: LibraryScreenProps) {
           </div>
         </div>
 
+        <SwitchNotices
+          className="mm-library__notice"
+          switching={switching}
+          profileId={profile.id}
+        />
         {openFolder.message !== null && (
           <ActionErrorBanner
             className="mm-library__notice"

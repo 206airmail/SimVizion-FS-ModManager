@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatBytes, formatDate, tailPath } from './format';
+import { formatBytes, formatDate, formatDateTime, tailPath } from './format';
 
 describe('formatBytes', () => {
   it.each([
@@ -33,6 +33,21 @@ describe('formatDate', () => {
 
   it('returns unparseable input unchanged', () => {
     expect(formatDate('not a date', 'en-US')).toBe('not a date');
+  });
+});
+
+describe('formatDateTime', () => {
+  it('formats the date and the time of day in the given time zone', () => {
+    expect(formatDateTime('2026-11-17T18:42:00Z', 'en-US', 'UTC')).toMatch(
+      /^Nov 17, 2026,? 6:42\sPM$/,
+    );
+    expect(formatDateTime('2026-11-17T23:30:00Z', 'en-US', 'Asia/Tokyo')).toMatch(
+      /^Nov 18, 2026,? 8:30\sAM$/,
+    );
+  });
+
+  it('returns unparseable input unchanged', () => {
+    expect(formatDateTime('yesterday', 'en-US', 'UTC')).toBe('yesterday');
   });
 });
 

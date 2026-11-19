@@ -32,17 +32,22 @@ export function StatusBar({ game, sampleData }: StatusBarProps) {
             />
             {game.settingsReadable ? t.settingsOk : t.settingsMissing}
           </span>
-          <span className="mm-statusbar__divider mm-statusbar__optional" />
-          <span className="mm-statusbar__item mm-statusbar__optional sv-truncate">
-            {game.overrideActive ? t.overrideOn : t.overrideOff}
-            {game.overrideActive && game.effectiveModsDir && (
-              <Tooltip label={game.effectiveModsDir}>
-                <span className="mm-statusbar__path sv-truncate">
-                  {tailPath(game.effectiveModsDir)}
-                </span>
-              </Tooltip>
-            )}
-          </span>
+          {/* An unreadable file says nothing about the override, so claim nothing. */}
+          {game.settingsReadable && (
+            <>
+              <span className="mm-statusbar__divider mm-statusbar__optional" />
+              <span className="mm-statusbar__item mm-statusbar__optional sv-truncate">
+                {game.overrideActive ? t.overrideOn : t.overrideOff}
+                {game.overrideActive && game.effectiveModsDir && (
+                  <Tooltip label={game.effectiveModsDir}>
+                    <span className="mm-statusbar__path sv-truncate">
+                      {tailPath(game.effectiveModsDir)}
+                    </span>
+                  </Tooltip>
+                )}
+              </span>
+            </>
+          )}
         </>
       )}
       <span className="mm-statusbar__spacer" />
