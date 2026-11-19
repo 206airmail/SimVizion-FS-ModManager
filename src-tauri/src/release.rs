@@ -4,15 +4,18 @@
 
 use std::path::PathBuf;
 use std::process::Command;
-use std::sync::RwLock;
+use std::sync::{Mutex, RwLock};
+use std::time::SystemTime;
 
 use fsmm_core::discovery::{self, LaunchTarget, WindowsProbe};
+use fsmm_core::library::app_update_due;
 use fsmm_core::model::{
     ApiError, AppUpdate, AppUpdateSettings, ErrorCode, GameStatus, HealthReport, OpProgress,
 };
 use tauri::ipc::Channel;
 use tauri::{AppHandle, Manager, State};
 use tauri_plugin_dialog::DialogExt;
+use tauri_plugin_updater::{Update, UpdaterExt};
 
 use crate::commands::{blocking, context};
 use crate::AppState;
@@ -123,23 +126,82 @@ pub async fn set_app_updates_enabled(
     blocking(move || library.set_app_updates_enabled(enabled)).await
 }
 
-/// A newer app version from the release feed, or `None`. Refused while app updates are off;
-/// without `force`, nothing is asked within 24 hours of the last check (Stage 2).
-#[tauri::command]
-pub async fn check_app_update(
-    _app: AppHandle,
-    _state: State<'_, AppState>,
-    _force: bool,
-) -> Result<Option<AppUpdate>, ApiError> {
-    todo!("Stage 2: tauri-plugin-updater")
+/// The update the last check found, kept for `install_app_update` so the frontend never names
+/// what to install.
+static PENDING: Mutex<Option<Update>> = Mutex::new(None);
+
+fn update_failed(e: impl std::fmt::Display) -> ApiError {
+    ApiError::new(ErrorCode::AppUpdateFailed, Some(e.to_string()))
 }
 
-/// Downloads the update found by `check_app_update`, verifies its signature, runs the installer
-/// (passive) and restarts the app (Stage 2).
+/// A newer app version from the release feed (`plugins.updater.endpoints` in
+/// `tauri.conf.json`), or `None`. Refused with `UpdatesDisabled` while app updates are off;
+/// without `force`, nothing is asked within 24 hours of the last successful check.
+#[tauri::command]
+pub async fn check_app_update(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    force: bool,
+) -> Result<Option<AppUpdate>, ApiError> {
+    let library = state.library.clone();
+    let settings = {
+        let library = library.clone();
+        blocking(move || library.app_update_settings()).await?
+    };
+    if !settings.enabled {
+        return Err(ApiError::new(ErrorCode::UpdatesDisabled, None));
+    }
+    if !app_update_due(&settings, SystemTime::now(), force) {
+        return Ok(None);
+    }
+    let found = app
+        .updater()
+        .map_err(update_failed)?
+        .check()
+        .await
+        .map_err(update_failed)?;
+    blocking(move || library.note_app_update_check(SystemTime::now())).await?;
+    let answer = found.as_ref().map(|update| AppUpdate {
+        version: update.version.clone(),
+        notes: update.body.clone(),
+        date: update.raw_json["pub_date"].as_str().map(str::to_owned),
+    });
+    if let Ok(mut pending) = PENDING.lock() {
+        *pending = found;
+    }
+    Ok(answer)
+}
+
+/// Downloads the update the last check found, verifies its signature against the public key in
+/// `tauri.conf.json`, and runs its installer (passive); on Windows the plugin exits the app and
+/// the installer starts the new version. Progress is reported in bytes.
 #[tauri::command]
 pub async fn install_app_update(
-    _app: AppHandle,
-    _on_progress: Channel<OpProgress>,
+    app: AppHandle,
+    on_progress: Channel<OpProgress>,
 ) -> Result<(), ApiError> {
-    todo!("Stage 2: tauri-plugin-updater")
+    let update = PENDING
+        .lock()
+        .ok()
+        .and_then(|pending| pending.clone())
+        .ok_or_else(|| update_failed("noUpdatePending"))?;
+    let mut done: u64 = 0;
+    update
+        .download_and_install(
+            |chunk, total| {
+                done += chunk as u64;
+                let _ = on_progress.send(OpProgress {
+                    done_bytes: done,
+                    total_bytes: total.unwrap_or(0),
+                    current: Some(update.version.clone()),
+                    done_items: 0,
+                    total_items: 1,
+                });
+            },
+            || {},
+        )
+        .await
+        .map_err(update_failed)?;
+    // Windows exits inside `download_and_install`; elsewhere the new version needs a restart.
+    app.restart()
 }
