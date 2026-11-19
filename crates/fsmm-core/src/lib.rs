@@ -6,6 +6,7 @@
 
 pub mod container;
 pub mod discovery;
+pub mod files;
 pub mod icons;
 pub mod library;
 pub mod model;

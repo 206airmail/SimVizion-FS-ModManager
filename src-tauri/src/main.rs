@@ -4,6 +4,7 @@
 mod commands;
 mod switching;
 mod thumbs;
+mod transfer;
 
 use std::fs;
 use std::path::PathBuf;
@@ -51,6 +52,12 @@ fn main() {
             switching::undo_switch,
             switching::latest_settings_backup,
             switching::restore_settings_backup,
+            transfer::plan_transfer,
+            transfer::execute_transfer,
+            transfer::remove_mods,
+            transfer::cancel_operation,
+            transfer::rename_profile,
+            transfer::remove_profile,
         ])
         .run(tauri::generate_context!())
         .expect("error while running SimVizion Mod Manager");

@@ -42,6 +42,14 @@ export const strings = {
     writesDisabled: 'This development build does not write game files, so nothing was changed.',
     nothingToUndo: 'There is nothing to undo any more, so nothing was changed.',
     noBackup: 'No backup of gameSettings.xml was found, so nothing was restored.',
+    recycleUnavailable:
+      'Windows cannot put this in the Recycle Bin (it may be too large, or the drive has no Recycle Bin), so it was left in place.',
+    notEnoughSpace: 'The target drive does not have enough free space, so nothing was copied.',
+    busy: 'Another file operation is still running. Wait for it to finish.',
+    cancelled: 'Cancelled. Mods not yet finished were left as they were.',
+    targetChanged:
+      'The mod or the target folder changed since the plan was made, so it was skipped.',
+    cannotRemoveProfile: 'The active folder and the game default folder stay in the list.',
   } satisfies Record<ErrorCode, string>,
 
   actionFailed: {
@@ -51,6 +59,13 @@ export const strings = {
     setActive: 'Could not change the active folder',
     undoSwitch: 'Could not undo the switch',
     restoreBackup: 'Could not restore the backup',
+    planTransfer: 'Could not check the transfer',
+    copy: 'Could not copy the mods',
+    move: 'Could not move the mods',
+    remove: 'Could not remove the mods',
+    cancelOperation: 'Could not cancel the operation',
+    renameProfile: 'Could not rename the folder',
+    removeProfile: 'Could not remove the folder from the list',
     dismiss: 'Dismiss',
   },
 
@@ -205,8 +220,141 @@ export const strings = {
     dependencyMissing: 'Missing from this profile',
     showInFolder: 'Show in folder',
     copyTo: 'Copy to…',
+    moveTo: 'Move to…',
+    copyHint: 'Copy the selected mods to another folder',
+    moveHint: 'Move the selected mods to another folder',
+    removeHint: 'Send the selected mods to the Windows Recycle Bin',
     remove: 'Remove',
     unknown: 'Unknown',
+  },
+
+  /** Copy, move and remove: the dialogs, the progress and result banners, and why they are blocked. */
+  fileOps: {
+    blockedGame: 'Close Farming Simulator 25 to copy, move or remove mods.',
+    blockedServer: 'Stop the dedicated server to copy, move or remove mods.',
+    blockedRunning: 'Another file operation is running. Wait for it to finish, or cancel it.',
+    cancel: 'Cancel',
+
+    transfer: {
+      title: (mode: 'copy' | 'move', count: number) =>
+        `${mode === 'copy' ? 'Copy' : 'Move'} ${mods(count)} to another folder`,
+      targetLabel: 'Target folder',
+      targetEmpty:
+        'There is no other mod folder to send these to. Add one first with "Add mod folder".',
+      targetMods: (count: number) => mods(count),
+      modeLabel: 'Action',
+      modeCopy: 'Copy',
+      modeMove: 'Move',
+      modeCopyHint: 'The originals stay in this folder.',
+      modeMoveHint: 'The mods leave this folder once they are safely in the target.',
+      next: 'Continue',
+      back: 'Back',
+      checking: 'Checking…',
+      planMods: 'Mods',
+      planSize: 'Total size',
+      planFree: 'Free space on the target drive',
+      sameDrive: 'Same drive: a move is instant and needs no extra space.',
+      noSpaceTitle: 'Not enough free space',
+      noSpaceText: (needed: string, free: string) =>
+        `This needs ${needed}, but the target drive has ${free} free. Free up some space or choose another folder.`,
+      clashTitle: (count: number, target: string) =>
+        `${count === 1 ? '1 mod already exists' : `${formatCount(count)} mods already exist`} in ${target}`,
+      clashText:
+        'Choose what happens to each one. Replace sends the existing version to the Windows Recycle Bin. Skip leaves it alone and does not copy the incoming one.',
+      clashTableLabel: 'Mods that already exist in the target folder',
+      colMod: 'Mod',
+      colIncoming: 'Incoming',
+      colExisting: 'Already there',
+      colChoice: 'Action',
+      choiceReplace: 'Replace',
+      choiceSkip: 'Skip',
+      choiceLabel: (name: string) => `Action for ${name}`,
+      applyAll: 'Apply to all',
+      replaceAll: 'Replace all',
+      skipAll: 'Skip all',
+      noVersion: 'No version',
+      confirm: (mode: 'copy' | 'move', count: number) =>
+        count === 0 ? `Nothing to ${mode}` : `${mode === 'copy' ? 'Copy' : 'Move'} ${mods(count)}`,
+      confirmNote: (count: number, skipped: number) =>
+        count === 0
+          ? 'Every mod is set to Skip, so there is nothing to do.'
+          : skipped === 0
+            ? `${mods(count)} will be transferred.`
+            : `${mods(count)} will be transferred and ${formatCount(skipped)} skipped.`,
+    },
+
+    remove: {
+      title: (count: number) => `Remove ${mods(count)}?`,
+      lead: (count: number, size: string, profile: string) =>
+        `${mods(count)} (${size}) will be removed from ${profile}.`,
+      more: (count: number) => `and ${formatCount(count)} more`,
+      recycle: 'They go to the Windows Recycle Bin, where you can restore them.',
+      leftInPlace:
+        'A mod that cannot be recycled is left where it is. Nothing is deleted outright.',
+      synced: 'If this folder is synced, the removal syncs to your other devices too.',
+      confirm: (count: number) => `Remove ${mods(count)}`,
+    },
+
+    progress: {
+      label: 'File operation progress',
+      title: (kind: 'copy' | 'move' | 'remove', target: string | null) =>
+        kind === 'remove'
+          ? 'Removing mods to the Recycle Bin'
+          : `${kind === 'copy' ? 'Copying' : 'Moving'} mods${target === null ? '' : ` to ${target}`}`,
+      preparing: 'Preparing…',
+      bytes: (done: string, total: string) => `${done} of ${total}`,
+      items: (done: number, total: number) => `${formatCount(done)} of ${mods(total)}`,
+      cancel: 'Cancel',
+      cancelling: 'Cancelling…',
+      percent: (fraction: number) => `${Math.floor(fraction * 100)}%`,
+    },
+
+    result: {
+      copied: (count: number, target: string) => `Copied ${mods(count)} to ${target}`,
+      moved: (count: number, target: string) => `Moved ${mods(count)} to ${target}`,
+      removed: (count: number) => `Removed ${mods(count)}`,
+      nothing: {
+        copy: 'Nothing was copied',
+        move: 'Nothing was moved',
+        remove: 'Nothing was removed',
+      },
+      cancelled: 'Cancelled',
+      skipped: (count: number) => `${formatCount(count)} skipped`,
+      failed: (count: number, kind: 'copy' | 'move' | 'remove') =>
+        `${formatCount(count)} could not be ${kind === 'copy' ? 'copied' : kind === 'move' ? 'moved' : 'removed'}`,
+      notDone: (count: number) => `${formatCount(count)} not done because it was cancelled`,
+      allSkipped: 'Every mod was skipped.',
+      recycleNote:
+        'Removed mods are in the Windows Recycle Bin. Restore them from there if you need them back.',
+      replacedNote: (count: number) =>
+        `${count === 1 ? 'The replaced mod is' : `${formatCount(count)} replaced mods are`} in the Windows Recycle Bin.`,
+      showDetails: (count: number) =>
+        `Show ${formatCount(count)} ${plural(count, 'detail', 'details')}`,
+      hideDetails: 'Hide details',
+      detailsLabel: 'Mods that were not done',
+    },
+  },
+
+  profileMenu: {
+    actions: (name: string) => `Actions for ${name}`,
+    rename: 'Rename…',
+    remove: 'Remove from list…',
+    blockedActive: 'The active folder stays in the list. Make another folder active first.',
+    blockedDefault: 'The game default folder stays in the list.',
+    blockedRunning: 'A file operation is running. Wait for it to finish, or cancel it.',
+    renameTitle: 'Rename mod folder',
+    renameLabel: 'Name in the list',
+    renameHelp: 'Only the name here changes. The folder on disk keeps its name.',
+    renameEmpty: 'Enter a name.',
+    renameTooLong: (max: number) => `Use at most ${formatCount(max)} characters.`,
+    renameAction: 'Rename',
+    renaming: 'Renaming…',
+    removeTitle: (name: string) => `Remove ${name} from the list?`,
+    removeText:
+      'The folder and its mods are not touched. You can add the folder again later with "Add mod folder".',
+    removeAction: 'Remove from list',
+    removing: 'Removing…',
+    cancel: 'Cancel',
   },
 
   status: {

@@ -34,7 +34,7 @@ export function Banner({ tone, title, children, actions, className }: BannerProp
       className={cx('sv-banner', `sv-banner--${tone}`, className)}
       role={tone === 'error' ? 'alert' : 'status'}
     >
-      <Icon icon={toneIcons[tone]} size={20} className="sv-banner__icon" />
+      <Icon icon={toneIcons[tone]} size={22} className="sv-banner__icon" />
       <div className="sv-banner__body">
         <div className="sv-banner__title">{title}</div>
         {children && <div className="sv-banner__text">{children}</div>}

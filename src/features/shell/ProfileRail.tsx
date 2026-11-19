@@ -4,11 +4,14 @@ import {
   FolderOpen,
   FolderPlus,
   HeartPulse,
+  ListX,
+  Pencil,
   Save,
   Settings,
   TriangleAlert,
   type LucideIcon,
 } from 'lucide-react';
+import { useRef, useState } from 'react';
 import type { Profile } from '../../api';
 import { formatBytes, formatCount } from '../../lib/format';
 import { useMediaQuery } from '../../lib/useMediaQuery';
@@ -16,12 +19,24 @@ import { strings } from '../../strings';
 import { IconButton } from '../../ui/Button';
 import { cx } from '../../ui/cx';
 import { Icon } from '../../ui/Icon';
+import { Menu, MenuPopup, type MenuAnchor, type MenuItem } from '../../ui/Menu';
 import { Tooltip } from '../../ui/Tooltip';
+import { RemoveProfileDialog, RenameProfileDialog } from '../files/ProfileDialogs';
 
 export type Section = 'library' | 'health' | 'savegames' | 'settings';
 
 /** Below this window width the rail shows icons only. Keep in step with shell.css. */
 export const RAIL_COLLAPSE_QUERY = '(max-width: 1040px)';
+
+/** What the profile menu does; the screen that owns the profile list supplies it. */
+export interface ProfileActions {
+  /** Changes the display name and reloads the list. Rejects with the Api's error. */
+  rename: (profile: Profile, name: string) => Promise<void>;
+  /** Removes the folder from the list and reloads. Rejects with the Api's error. */
+  remove: (profile: Profile) => Promise<void>;
+  /** Why "Remove from list" is unavailable for this profile right now, or null. */
+  removeBlockedReason: (profile: Profile) => string | null;
+}
 
 export interface ProfileRailProps {
   profiles: readonly Profile[];
@@ -31,6 +46,7 @@ export interface ProfileRailProps {
   onSelectSection: (section: Section) => void;
   /** Opens the folder picker and adds the chosen folder as a profile. */
   onAddFolder: () => void;
+  profileActions: ProfileActions;
 }
 
 export function ProfileRail({
@@ -40,9 +56,31 @@ export function ProfileRail({
   onSelectProfile,
   onSelectSection,
   onAddFolder,
+  profileActions,
 }: ProfileRailProps) {
   const t = strings.rail;
   const collapsed = useMediaQuery(RAIL_COLLAPSE_QUERY);
+  const [dialog, setDialog] = useState<{ kind: 'rename' | 'remove'; profile: Profile } | null>(
+    null,
+  );
+  const menuItems = (profile: Profile): MenuItem[] => {
+    const blocked = profileActions.removeBlockedReason(profile);
+    return [
+      {
+        id: 'rename',
+        label: strings.profileMenu.rename,
+        icon: Pencil,
+        onSelect: () => setDialog({ kind: 'rename', profile }),
+      },
+      {
+        id: 'remove',
+        label: strings.profileMenu.remove,
+        icon: ListX,
+        disabledReason: blocked ?? undefined,
+        onSelect: () => setDialog({ kind: 'remove', profile }),
+      },
+    ];
+  };
   const totals = profiles.reduce(
     (sum, profile) => ({
       mods: sum.mods + profile.modCount,
@@ -70,6 +108,7 @@ export function ProfileRail({
                 profile={profile}
                 selected={section === 'library' && profile.id === selectedProfileId}
                 collapsed={collapsed}
+                menuItems={menuItems(profile)}
                 onSelect={() => onSelectProfile(profile.id)}
               />
             </li>
@@ -133,6 +172,21 @@ export function ProfileRail({
           onSelect={() => onSelectSection('settings')}
         />
       </div>
+
+      {dialog?.kind === 'rename' && (
+        <RenameProfileDialog
+          profile={dialog.profile}
+          onClose={() => setDialog(null)}
+          onRename={profileActions.rename}
+        />
+      )}
+      {dialog?.kind === 'remove' && (
+        <RemoveProfileDialog
+          profile={dialog.profile}
+          onClose={() => setDialog(null)}
+          onRemove={profileActions.remove}
+        />
+      )}
     </nav>
   );
 }
@@ -141,12 +195,21 @@ interface ProfileItemProps {
   profile: Profile;
   selected: boolean;
   collapsed: boolean;
+  menuItems: MenuItem[];
   onSelect: () => void;
 }
 
-function ProfileItem({ profile, selected, collapsed, onSelect }: ProfileItemProps) {
+/**
+ * One folder in the rail. The profile menu is a small button at the right, visible on hover and
+ * keyboard focus. The collapsed rail has no room for it, so there (and as a shortcut everywhere)
+ * the same menu opens from the context menu key, Shift+F10 or a right click.
+ */
+function ProfileItem({ profile, selected, collapsed, menuItems, onSelect }: ProfileItemProps) {
   const t = strings.rail;
   const summary = t.summary(profile.modCount, formatBytes(profile.totalBytes));
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [contextAnchor, setContextAnchor] = useState<MenuAnchor | null>(null);
+  const itemRef = useRef<HTMLButtonElement>(null);
 
   const item = (
     <button
@@ -154,7 +217,18 @@ function ProfileItem({ profile, selected, collapsed, onSelect }: ProfileItemProp
       className="mm-profile"
       aria-current={selected ? 'page' : undefined}
       aria-label={collapsed ? `${profile.name}, ${summary}` : undefined}
+      ref={itemRef}
       onClick={onSelect}
+      onContextMenu={(event) => {
+        event.preventDefault();
+        setContextAnchor({ x: event.clientX, y: event.clientY });
+      }}
+      onKeyDown={(event) => {
+        if (event.key === 'ContextMenu' || (event.shiftKey && event.key === 'F10')) {
+          event.preventDefault();
+          setContextAnchor(event.currentTarget);
+        }
+      }}
     >
       <span className="mm-profile__icon">
         <Icon icon={selected ? FolderOpen : Folder} />
@@ -171,13 +245,13 @@ function ProfileItem({ profile, selected, collapsed, onSelect }: ProfileItemProp
             <span className="mm-profile__marks sv-num">
               {profile.issueCount > 0 && (
                 <span className="mm-profile__mark" title={t.issues(profile.issueCount)}>
-                  <Icon icon={TriangleAlert} size={12} className="sv-tone-warning" />
+                  <Icon icon={TriangleAlert} size={14} className="sv-tone-warning" />
                   {formatCount(profile.issueCount)}
                 </span>
               )}
               {profile.updateCount > 0 && (
                 <span className="mm-profile__mark" title={t.updates(profile.updateCount)}>
-                  <Icon icon={CircleArrowUp} size={12} className="sv-tone-info" />
+                  <Icon icon={CircleArrowUp} size={14} className="sv-tone-info" />
                   {formatCount(profile.updateCount)}
                 </span>
               )}
@@ -188,7 +262,28 @@ function ProfileItem({ profile, selected, collapsed, onSelect }: ProfileItemProp
     </button>
   );
 
-  return collapsed ? <Tooltip label={`${profile.name} · ${summary}`}>{item}</Tooltip> : item;
+  const label = strings.profileMenu.actions(profile.name);
+  return (
+    <div className="mm-profile-row" data-menu-open={menuOpen || undefined}>
+      {collapsed ? <Tooltip label={`${profile.name} · ${summary}`}>{item}</Tooltip> : item}
+      {!collapsed && (
+        <div className="mm-profile-row__menu">
+          <Menu label={label} items={menuItems} onOpenChange={setMenuOpen} />
+        </div>
+      )}
+      {contextAnchor && (
+        <MenuPopup
+          label={label}
+          items={menuItems}
+          anchor={contextAnchor}
+          onClose={(restoreFocus) => {
+            setContextAnchor(null);
+            if (restoreFocus) itemRef.current?.focus();
+          }}
+        />
+      )}
+    </div>
+  );
 }
 
 interface NavItemProps {

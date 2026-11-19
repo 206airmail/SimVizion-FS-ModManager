@@ -1,21 +1,58 @@
 // Development-only page (open with #gallery): every primitive in its states, for design review.
 // Its labels are review captions, not product text, so they are not in strings.ts.
 
-import { FolderOpen, LayoutGrid, List, PackageOpen, Play, RefreshCw, Trash2 } from 'lucide-react';
+import {
+  Copy,
+  FolderOpen,
+  LayoutGrid,
+  List,
+  ListX,
+  PackageOpen,
+  Pencil,
+  Play,
+  RefreshCw,
+  Trash2,
+} from 'lucide-react';
 import { useState, type ReactNode } from 'react';
 import { strings } from '../../strings';
 import { Button, IconButton } from '../../ui/Button';
+import { Dialog } from '../../ui/Dialog';
 import { Banner, EmptyState } from '../../ui/Feedback';
+import { Menu, type MenuItem } from '../../ui/Menu';
 import { Pill } from '../../ui/Pill';
 import { SearchField } from '../../ui/SearchField';
 import { SegmentedControl } from '../../ui/SegmentedControl';
 import { Select } from '../../ui/Select';
+
+type DialogSample = 'confirm' | 'destructive' | 'busy' | 'scrolling' | null;
+
+const menuItems: MenuItem[] = [
+  { id: 'copy', label: 'Copy to…', icon: Copy, onSelect: () => undefined },
+  { id: 'rename', label: 'Rename…', icon: Pencil, onSelect: () => undefined },
+  {
+    id: 'remove',
+    label: 'Remove from list…',
+    icon: ListX,
+    disabledReason: 'The active folder stays in the list.',
+    onSelect: () => undefined,
+  },
+  {
+    id: 'delete',
+    label: 'Move to the Recycle Bin',
+    icon: Trash2,
+    destructive: true,
+    separatorBefore: true,
+    onSelect: () => undefined,
+  },
+];
 
 export function Gallery() {
   const [search, setSearch] = useState('tractor');
   const [kind, setKind] = useState<'all' | 'vehicle' | 'map'>('all');
   const [status, setStatus] = useState<'all' | 'issues' | 'updates'>('issues');
   const [view, setView] = useState<'list' | 'grid'>('list');
+  const [dialog, setDialog] = useState<DialogSample>(null);
+  const closeDialog = () => setDialog(null);
 
   return (
     <div className="mm-gallery">
@@ -134,6 +171,87 @@ export function Gallery() {
         </Banner>
         <Banner tone="success" title="Profile switched" />
       </Group>
+
+      <Group title="Menu (arrows, Home, End, Enter, Escape; a disabled item keeps its reason)">
+        <Menu label="Actions" items={menuItems} />
+        <Menu label="Actions" items={menuItems} text="Actions" size="standard" />
+      </Group>
+
+      <Group title="Dialog (modal: focus trapped, Escape closes unless busy, focus returns here)">
+        <Button onClick={() => setDialog('confirm')}>Confirmation</Button>
+        <Button variant="destructive" icon={Trash2} onClick={() => setDialog('destructive')}>
+          Destructive confirmation
+        </Button>
+        <Button onClick={() => setDialog('busy')}>Busy (Escape ignored)</Button>
+        <Button onClick={() => setDialog('scrolling')}>Long body (scrolls)</Button>
+      </Group>
+      {dialog === 'confirm' && (
+        <Dialog
+          title="Rename mod folder"
+          size="small"
+          onClose={closeDialog}
+          footer={
+            <>
+              <Button onClick={closeDialog}>Cancel</Button>
+              <Button variant="primary" onClick={closeDialog}>
+                Rename
+              </Button>
+            </>
+          }
+        >
+          <p>Only the name in the list changes. The folder on disk keeps its name.</p>
+        </Dialog>
+      )}
+      {dialog === 'destructive' && (
+        <Dialog
+          title="Remove 3 mods?"
+          size="small"
+          onClose={closeDialog}
+          footer={
+            <>
+              <Button data-autofocus onClick={closeDialog}>
+                Cancel
+              </Button>
+              <Button variant="destructive" onClick={closeDialog}>
+                Remove 3 mods
+              </Button>
+            </>
+          }
+        >
+          <p>They go to the Windows Recycle Bin. Focus starts on Cancel.</p>
+        </Dialog>
+      )}
+      {dialog === 'busy' && (
+        <Dialog
+          title="Checking the transfer"
+          size="small"
+          busy
+          onClose={closeDialog}
+          footer={
+            <>
+              <Button disabled>Cancel</Button>
+              <Button variant="primary" disabled aria-busy="true">
+                Checking…
+              </Button>
+            </>
+          }
+        >
+          <p>Escape does nothing while an action runs.</p>
+          <Button onClick={closeDialog}>Finish</Button>
+        </Dialog>
+      )}
+      {dialog === 'scrolling' && (
+        <Dialog
+          title="A body taller than the window"
+          size="medium"
+          onClose={closeDialog}
+          footer={<Button onClick={closeDialog}>Close</Button>}
+        >
+          {Array.from({ length: 24 }, (_, index) => (
+            <p key={index}>Line {index + 1}. The header and footer stay fixed; the body scrolls.</p>
+          ))}
+        </Dialog>
+      )}
 
       <Group title="Empty and error states">
         <div className="sv-panel" style={{ width: 380, height: 220 }}>

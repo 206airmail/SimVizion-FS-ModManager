@@ -520,6 +520,73 @@ fn the_journal_survives_reopening() {
 }
 
 #[test]
+fn profiles_can_be_renamed_and_removed_by_id() {
+    let store = Store::open_in_memory().unwrap();
+    let a = store.add_profile(Path::new(r"C:\mods\a"), "a").unwrap();
+    let b = store.add_profile(Path::new(r"C:\mods\b"), "b").unwrap();
+
+    assert!(store.rename_profile(&a.id, "Renamed").unwrap());
+    assert!(!store.rename_profile("p999", "x").unwrap());
+    assert!(!store.rename_profile("not-an-id", "x").unwrap());
+    let names: Vec<String> = store
+        .profiles()
+        .unwrap()
+        .into_iter()
+        .map(|p| p.name)
+        .collect();
+    assert_eq!(names, ["Renamed", "b"]);
+
+    assert!(store.remove_profile(&a.id).unwrap());
+    assert!(!store.remove_profile(&a.id).unwrap());
+    let left: Vec<String> = store
+        .profiles()
+        .unwrap()
+        .into_iter()
+        .map(|p| p.id)
+        .collect();
+    assert_eq!(left, [b.id]);
+}
+
+#[test]
+fn file_operations_are_journaled_apart_from_settings_writes() {
+    let store = Store::open_in_memory().unwrap();
+    let id = store
+        .add_file_op(&NewFileOp {
+            kind: "copy",
+            plan_id: Some("t1"),
+            source: Path::new(r"C:\a\X.zip"),
+            target: Some(Path::new(r"C:\b\X.zip")),
+            result: "ok",
+        })
+        .unwrap();
+    assert_eq!(id, "f1");
+    store
+        .add_file_op(&NewFileOp {
+            kind: "recycle",
+            plan_id: None,
+            source: Path::new(r"C:\a\Y.zip"),
+            target: None,
+            result: "recycleUnavailable",
+        })
+        .unwrap();
+
+    let rows = store.file_ops().unwrap();
+    assert_eq!(rows.len(), 2);
+    assert_eq!(rows[0].kind, "copy");
+    assert_eq!(rows[0].plan_id.as_deref(), Some("t1"));
+    assert_eq!(rows[0].target.as_deref(), Some(Path::new(r"C:\b\X.zip")));
+    assert!(rows[0].at > 0);
+    assert_eq!(
+        (rows[1].plan_id.clone(), rows[1].target.clone()),
+        (None, None)
+    );
+    assert_eq!(rows[1].result, "recycleUnavailable");
+    // Undo only ever sees settings writes.
+    assert!(store.latest_ok_op().unwrap().is_none());
+    assert!(store.ops().unwrap().is_empty());
+}
+
+#[test]
 fn store_is_send_and_sync() {
     fn assert_send_sync<T: Send + Sync>() {}
     assert_send_sync::<Store>();

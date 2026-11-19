@@ -19,7 +19,7 @@ export function StatusMarks({ mod }: { mod: ModEntry }) {
       {severity !== null && (
         <Tooltip label={mod.issues.map((issue) => strings.issues[issue.kind]).join(' · ')}>
           <span className="mm-mark" aria-label={t.issueCount(mod.issues.length)}>
-            <Icon icon={severityIcons[severity]} size={14} className={`sv-tone-${severity}`} />
+            <Icon icon={severityIcons[severity]} size={16} className={`sv-tone-${severity}`} />
             {mod.issues.length > 1 && <span className="sv-num">{mod.issues.length}</span>}
           </span>
         </Tooltip>
