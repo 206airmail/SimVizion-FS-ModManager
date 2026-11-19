@@ -4,22 +4,26 @@ Updated: 2026-11-18, branch `m1-foundation-prototype`
 
 ## Active work
 
-Milestone 1: foundation + Library screen prototype on sample data (plan: `docs/dev/plans/2026-11-18-project-plan.md`).
+Milestone 1 (foundation + Library screen prototype on sample data) is built and waiting at the design review gate. Plan: `docs/dev/plans/2026-11-18-project-plan.md`.
 
-- Stage 0 foundation: done (workspace, Tauri shell, Vite/React, tokens, data contract, project docs).
-- Stage 1 UI primitives: next.
-- Stage 2 screen (sample data, shell, library): pending.
-- Stage 3 integration and polish, then the design review gate: pending.
+- Done: workspace and tooling, tokens, data contract, UI primitives, sample data, Profile Rail shell, Library screen (list, grid, inspector, states).
+- Review switches: `#gallery` (all primitives), `?mock=stress` (5,000-mod profile), `?mock=slow`, `?mock=error`, `?mock=empty`.
 
 ## Next step
 
-Build the `src/ui/` primitives and a dev gallery route, then the Profile Rail shell and Library screen against `src/api/mock`.
+User reviews the prototype (`npm run dev`, open `http://localhost:1420`). After sign-off, merge the pull request and plan Milestone 2 (read-only core: discovery, settings read, scan, modDesc parse, icons).
 
 ## Last verification
 
-2026-11-18: `npm run check` passes; `cargo test -p fsmm-core` 15 passed; `cargo fmt --all --check` and `cargo clippy -p fsmm-core --all-targets -- -D warnings` clean; `vite build` succeeds.
+2026-11-18: `npm run check` passes (78 tests); `cargo test -p fsmm-core` 15 passed; `cargo fmt --all --check` and `cargo clippy -p fsmm-core --all-targets -- -D warnings` clean; `vite build` succeeds. Rendered review in Orca's browser at 1920×1080, 1440×810, 1280×720 and 960×640.
+
+Production build, 5,000 mods: list scroll step median 2.9 ms (p95 4.0 ms); sorting causes no task over 50 ms; grid scroll step median 8.1 ms (p95 29 ms).
 
 ## Known issues
 
-- **Tauri shell does not compile on the development machine.** The Windows SDK 10.0.26100.0 headers are corrupted (many files, including `Windows.h` and `winnt.h`, are zero-filled), so the `vswhom-sys` C++ build step fails. Needs a repair of the Windows SDK through the Visual Studio Installer. Until then `npm run tauri dev`, `cargo check --workspace` and `cargo clippy --workspace` fail; the frontend (`npm run dev`) and `fsmm-core` are unaffected.
-- The app emblem (`src-tauri/app-icon.svg`) is a placeholder.
+- **Tauri shell does not compile on the development machine.** The Windows SDK 10.0.26100.0 headers are corrupted (many files, including `Windows.h` and `winnt.h`, are zero-filled), so the `vswhom-sys` C++ build step fails. Needs a repair of the Windows SDK through the Visual Studio Installer. Until then `npm run tauri dev`, `cargo check --workspace` and `cargo clippy --workspace` fail; the frontend and `fsmm-core` are unaffected. The app has not been seen in the real WebView2 window yet.
+- Grid view drops frames when a whole row of cards mounts at once with 5,000 mods (p95 29 ms). Re-measure with real cached thumbnails in Milestone 3.
+- Keyboard focus ring on the list was checked by code, not seen: scripted key presses do not trigger `:focus-visible`.
+- The app emblem (`src-tauri/app-icon.svg`, `Emblem.tsx`) is a placeholder.
+- Buttons for later milestones are present but inert: Launch game, Set as active, Open folder, Add mod folder, Update, Link source, Show in folder, Copy to, Remove.
+- Not built from the Stage 1 list: Checkbox (nothing uses one yet).

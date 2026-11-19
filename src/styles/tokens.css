@@ -83,6 +83,14 @@
   --sv-tint-info-border: rgba(134, 205, 208, 0.8);
   --sv-tint-success-bg: rgba(167, 213, 160, 0.19);
   --sv-tint-success-border: rgba(167, 213, 160, 0.8);
+  /* Fine linework in the identity header only (identity-composition.md: domain motif). */
+  --sv-brand-linework: rgba(66, 205, 210, 0.07);
+  --sv-brand-linework-mask: linear-gradient(90deg, transparent 10%, #000 34%, transparent 62%);
+  /* Quieter edge for small status pills ("subtle semantic border", extended-components.md). */
+  --sv-tint-warning-edge: rgba(240, 184, 75, 0.45);
+  --sv-tint-error-edge: rgba(240, 113, 113, 0.45);
+  --sv-tint-info-edge: rgba(134, 205, 208, 0.45);
+  --sv-tint-success-edge: rgba(167, 213, 160, 0.45);
   /* Skeleton placeholders (notifications.md). */
   --sv-skeleton-a: #294147;
   --sv-skeleton-b: #223338;
