@@ -55,7 +55,8 @@
 }
 .mm-op__problem-name {
   color: var(--sv-text);
-  font: 400 12px/1.4 var(--sv-font-mono);
+  font: 400 12px var(--sv-font-mono);
+  line-height: round(1.4em, 1px);
 }
 .mm-op__problem-reason {
   color: var(--sv-text-readable-secondary);

@@ -20,11 +20,20 @@ body {
 .sv-app {
   background: var(--sv-window);
   color: var(--sv-text);
-  font: 400 13px/1.3 var(--sv-font);
+  font: 400 13px var(--sv-font);
   letter-spacing: 0;
   -webkit-user-select: none;
   user-select: none;
   cursor: default;
+}
+
+/* The 1.3 line height, rounded to whole pixels for each element's own font size. Unrounded, 13px
+   text makes 16.9px lines, which push every row, cell and centred icon below them off the pixel
+   grid, and icons drawn between pixels look blurred at 100% display scaling. Set per element
+   because a rounded length would otherwise be inherited by text of other sizes. */
+.sv-app,
+.sv-app * {
+  line-height: round(1.3em, 1px);
 }
 
 .sv-app ::-webkit-scrollbar {
@@ -93,7 +102,8 @@ p {
   border-radius: 4px;
   background: var(--sv-recessed);
   color: var(--sv-text);
-  font: 400 12px/1.3 var(--sv-font-mono);
+  font: 400 12px var(--sv-font-mono);
+  line-height: round(1.3em, 1px);
   overflow-wrap: anywhere;
 }
 

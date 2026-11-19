@@ -351,7 +351,8 @@
   border-radius: var(--sv-radius-control);
   background: var(--sv-elevated);
   color: var(--sv-text-secondary);
-  font: 500 11px/1.2 var(--sv-font);
+  font: 500 11px var(--sv-font);
+  line-height: round(1.2em, 1px);
   white-space: nowrap;
 }
 .sv-pill--compact {
@@ -629,7 +630,8 @@
   display: grid;
   align-items: center;
   height: 32px;
-  border-bottom: 1px solid var(--sv-border);
+  /* An inset line, not a border, so the full 32px centres its content on whole pixels. */
+  box-shadow: inset 0 -1px 0 var(--sv-border);
   background: var(--sv-elevated);
   font-size: 12px;
   font-weight: 500;
@@ -677,7 +679,8 @@
   display: grid;
   align-items: center;
   height: 36px;
-  border-bottom: 1px solid var(--sv-border);
+  /* An inset line, not a border, so the full 36px centres its content on whole pixels. */
+  box-shadow: inset 0 -1px 0 var(--sv-border);
   cursor: default;
 }
 .sv-row:hover {
@@ -779,7 +782,7 @@
 .sv-dialog__title {
   font-size: 16px;
   font-weight: 600;
-  line-height: 1.3;
+  line-height: round(1.3em, 1px);
 }
 .sv-dialog__body {
   display: flex;
