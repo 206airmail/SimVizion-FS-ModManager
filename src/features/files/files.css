@@ -1,0 +1,307 @@
+/* File operations: the dialogs for copy, move, remove and profile management, and the progress and
+   result banners. Dialog and Menu themselves are in ui/index.css. */
+
+/* ---------- A button that is unavailable but still explains why (focusable, aria-disabled) ---------- */
+.sv-button.mm-reason[aria-disabled='true'],
+.sv-button.mm-reason[aria-disabled='true']:hover,
+.sv-button.mm-reason[aria-disabled='true']:active {
+  background: var(--sv-disabled-bg);
+  border-color: var(--sv-disabled-border);
+  color: var(--sv-disabled-text);
+  box-shadow: none;
+  cursor: not-allowed;
+}
+.sv-button.mm-reason[aria-disabled='true'] > svg,
+.sv-button.mm-reason[aria-disabled='true']:hover > svg {
+  color: var(--sv-disabled-text);
+}
+.sv-button.mm-reason[aria-disabled='true']:focus-visible {
+  border-color: var(--sv-teal);
+  outline: none;
+}
+
+/* ---------- Progress banner ---------- */
+.mm-op .sv-banner__body {
+  gap: 6px;
+}
+.mm-op__current {
+  color: var(--sv-text-readable-secondary);
+}
+.mm-op__stats {
+  display: flex;
+  gap: 12px;
+  color: var(--sv-text-secondary);
+  font-size: 12px;
+}
+.mm-op__stats > :last-child {
+  margin-left: auto;
+}
+
+/* ---------- Result banner: failed mods ---------- */
+.mm-op__problems {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 160px;
+  margin: 8px 0 0;
+  padding: 0;
+  overflow: auto;
+  list-style: none;
+}
+.mm-op__problem {
+  display: grid;
+  grid-template-columns: minmax(120px, 0.45fr) minmax(0, 1fr);
+  gap: 12px;
+}
+.mm-op__problem-name {
+  color: var(--sv-text);
+  font: 400 12px/1.4 var(--sv-font-mono);
+}
+.mm-op__problem-reason {
+  color: var(--sv-text-readable-secondary);
+  font-size: 12px;
+}
+
+/* ---------- Fields inside dialogs ---------- */
+.mm-field-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.mm-field-group > .sv-segmented {
+  align-self: flex-start;
+}
+.mm-field-label {
+  color: var(--sv-text);
+  font-weight: 600;
+}
+.mm-field-hint {
+  color: var(--sv-text-secondary);
+  font-size: 12px;
+}
+.mm-field-error {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--sv-text);
+  font-size: 12px;
+}
+.mm-field-error > svg {
+  flex: none;
+}
+
+/* A text field: recessed, 32px, focus is a teal border only. An invalid value keeps the neutral
+   border; the message with its red icon carries the error. */
+.mm-input {
+  height: 32px;
+  padding: 0 8px;
+  border: 1px solid var(--sv-border);
+  border-radius: var(--sv-radius-control);
+  background: var(--sv-recessed);
+  color: var(--sv-text);
+  transition: border-color 100ms ease-out;
+}
+.mm-input:hover {
+  border-color: var(--sv-hover-border);
+}
+.mm-input:focus {
+  outline: none;
+  border-color: var(--sv-teal);
+}
+.mm-input:disabled {
+  background: var(--sv-disabled-bg);
+  border-color: var(--sv-disabled-border);
+  color: var(--sv-disabled-text);
+  cursor: not-allowed;
+}
+
+/* ---------- Target folder choice ---------- */
+.mm-targets {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 232px;
+  overflow: auto;
+}
+.mm-target {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 48px;
+  padding: 6px 10px;
+  border: 1px solid var(--sv-border);
+  border-radius: var(--sv-radius-control);
+  background: var(--sv-recessed);
+  color: var(--sv-text);
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background-color 100ms ease-out,
+    border-color 100ms ease-out;
+}
+.mm-target > svg {
+  flex: none;
+  color: var(--sv-text-secondary);
+}
+.mm-target:hover {
+  border-color: var(--sv-hover-border);
+  background: var(--sv-hover-bg);
+}
+.mm-target:focus-visible {
+  outline: none;
+  border-color: var(--sv-teal);
+}
+.mm-target[aria-checked='true'] {
+  border-color: var(--sv-selected-border);
+  background: var(--sv-selected-bg);
+}
+.mm-target[aria-checked='true'] > svg:first-child,
+.mm-target__check {
+  color: var(--sv-teal);
+}
+.mm-target__body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.mm-target__name {
+  font-weight: 500;
+}
+.mm-target__meta {
+  color: var(--sv-text-secondary);
+  font-size: 12px;
+}
+
+/* ---------- Plan summary ---------- */
+.mm-plan {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  border: 1px solid var(--sv-border);
+  border-radius: var(--sv-radius-control);
+  background: var(--sv-recessed);
+}
+.mm-plan__row {
+  display: grid;
+  grid-template-columns: minmax(150px, 0.4fr) minmax(0, 1fr);
+  gap: 12px;
+  padding: 4px 10px;
+}
+.mm-plan__row + .mm-plan__row {
+  border-top: 1px solid var(--sv-border);
+}
+.mm-plan__row dt {
+  color: var(--sv-text-secondary);
+}
+.mm-plan__row dd {
+  margin: 0;
+  color: var(--sv-text);
+}
+.mm-plan__note {
+  color: var(--sv-text-readable-secondary);
+}
+
+/* ---------- Clash list ---------- */
+.mm-clash-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.mm-clash-section__title {
+  color: var(--sv-text);
+  font-size: 14px;
+  font-weight: 600;
+}
+.mm-clash {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.mm-clash__tools {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.mm-clash__tools-label {
+  margin-right: 4px;
+  color: var(--sv-text-secondary);
+}
+.mm-clash__scroll {
+  max-height: 232px;
+  overflow: auto;
+  border: 1px solid var(--sv-border);
+  border-radius: var(--sv-radius-control);
+  background: var(--sv-recessed);
+}
+.mm-clash__cols {
+  grid-template-columns: minmax(130px, 1.2fr) minmax(120px, 1fr) minmax(120px, 1fr) 144px;
+}
+.mm-clash__table .sv-table__head {
+  position: sticky;
+  z-index: 1;
+  top: 0;
+}
+.mm-clash__row {
+  display: grid;
+  align-items: center;
+  min-height: 48px;
+}
+.mm-clash__row + .mm-clash__row {
+  border-top: 1px solid var(--sv-border);
+}
+.mm-clash__row .sv-tooltip-anchor {
+  max-width: 100%;
+}
+.mm-clash__name {
+  display: block;
+  color: var(--sv-text);
+  font-weight: 500;
+}
+.mm-clash__version {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.mm-clash__version-name {
+  color: var(--sv-text);
+  font-weight: 600;
+}
+.mm-clash__version-meta {
+  color: var(--sv-text-secondary);
+  font-size: 12px;
+}
+
+/* ---------- Remove confirmation ---------- */
+.mm-confirm__lead {
+  color: var(--sv-text);
+}
+.mm-confirm__names {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--sv-border);
+  border-radius: var(--sv-radius-control);
+  background: var(--sv-recessed);
+  color: var(--sv-text);
+  list-style: none;
+}
+.mm-confirm__more {
+  color: var(--sv-text-secondary);
+}
+.mm-confirm__note {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  color: var(--sv-text-secondary);
+  font-size: 12px;
+}
+.mm-confirm__note > svg {
+  flex: none;
+  margin-top: 1px;
+}
