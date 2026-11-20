@@ -4,8 +4,15 @@ import { formatBytes } from '../../lib/format';
 import { strings } from '../../strings';
 import { Button } from '../../ui/Button';
 import { Banner } from '../../ui/Feedback';
+import { ReasonButton } from '../files/ReasonButton';
 import { progressFraction } from '../files/progress';
-import { installButtonKey, notesAreLong, notesPreview, notesText } from './state';
+import {
+  installBlockedReason,
+  installButtonKey,
+  notesAreLong,
+  notesPreview,
+  notesText,
+} from './state';
 import type { AppUpdatesController } from './useAppUpdates';
 
 const t = strings.appUpdates.banner;
@@ -16,7 +23,17 @@ const t = strings.appUpdates.banner;
  * it shows the download progress; the app restarts by itself when that is done. A failed install
  * leaves the banner in place with the reason and a retry, never a dialog.
  */
-export function AppUpdateBanner({ appUpdates }: { appUpdates: AppUpdatesController }) {
+export function AppUpdateBanner({
+  appUpdates,
+  fileOperationRunning,
+  modUpdateChecking,
+}: {
+  appUpdates: AppUpdatesController;
+  /** A copy, move, remove or mod update is writing: installing would end the app in the middle. */
+  fileOperationRunning: boolean;
+  /** A check for mod updates is running. */
+  modUpdateChecking: boolean;
+}) {
   const { found, bannerVisible, install, failure } = appUpdates;
   // The notes open state belongs to one version: a newer update starts collapsed again.
   const [expanded, setExpanded] = useState<string | null>(null);
@@ -39,15 +56,22 @@ export function AppUpdateBanner({ appUpdates }: { appUpdates: AppUpdatesControll
           <Button size="compact" disabled={installing} onClick={appUpdates.later}>
             {t.later}
           </Button>
-          <Button
-            size="compact"
-            variant="primary"
-            icon={Download}
-            disabled={installing}
-            onClick={appUpdates.installNow}
-          >
-            {t[key]}
-          </Button>
+          {installing ? (
+            <Button size="compact" variant="primary" icon={Download} disabled>
+              {t[key]}
+            </Button>
+          ) : (
+            <ReasonButton
+              size="compact"
+              variant="primary"
+              icon={Download}
+              hint={t.installHint}
+              blockedReason={installBlockedReason(fileOperationRunning, modUpdateChecking)}
+              onClick={appUpdates.installNow}
+            >
+              {t[key]}
+            </ReasonButton>
+          )}
         </>
       }
     >

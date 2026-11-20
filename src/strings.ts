@@ -119,6 +119,8 @@ export const strings = {
     busy: 'Switching…',
     blockedGame: 'Close Farming Simulator 25 to change the active folder.',
     blockedServer: 'Stop the dedicated server to change the active folder.',
+    blockedStarting:
+      'Farming Simulator 25 is starting. Wait for it to open, then close it to change the active folder.',
     doneTitle: (name: string) => `${name} is now the active folder`,
     doneText:
       'The game loads its mods from this folder the next time it starts. gameSettings.xml was backed up first.',
@@ -152,6 +154,8 @@ export const strings = {
     launchStarting: 'Starting…',
     launchStartingReason: 'The game is starting.',
     launchBlockedRunning: 'Farming Simulator 25 is already running.',
+    launchBlockedFileOp: 'A file operation is running. Wait for it to finish, or cancel it.',
+    launchBlockedSwitch: 'The active folder is being changed. Wait for it to finish.',
     launchBlockedNone:
       'No Farming Simulator 25 installation was found, so the app has nothing to start.',
     launchChecking: 'Looking for the game…',
@@ -401,6 +405,8 @@ export const strings = {
   fileOps: {
     blockedGame: 'Close Farming Simulator 25 to copy, move, remove or update mods.',
     blockedServer: 'Stop the dedicated server to copy, move, remove or update mods.',
+    blockedStarting:
+      'Farming Simulator 25 is starting. Wait for it to open, then close it to copy, move, remove or update mods.',
     blockedRunning: 'Another file operation is running. Wait for it to finish, or cancel it.',
     cancel: 'Cancel',
 
@@ -724,12 +730,14 @@ export const strings = {
 
   /** Online updates: Settings, the first-run prompt, the status item and the dialogs. */
   updates: {
+    /** Why the Update buttons wait while a check for mod updates runs. */
+    blockedChecking: 'An update check is running.',
     settings: {
       title: 'Settings',
       onlineTitle: 'Online',
       modsGroupTitle: 'Mod updates',
       switchLabel: 'Check for mod updates online',
-      sent: 'When this is on, the app sends the file names of your mods to SiloAPI, a service by HLLMR Ventures, to find newer versions. For a zip whose name the service does not know, it also sends a fingerprint of the file (its SHA-256). Nothing else is sent, and nothing at all leaves your computer while this is off.',
+      sent: 'When this is on, the app sends the file names of your mods to SiloAPI, a service by HLLMR Ventures, to find newer versions. For a zip whose name the service does not know, it also sends a fingerprint of the file (its SHA-256). Nothing else is sent, and none of this is sent while this is off.',
       downloads:
         'Updates are downloaded from GitHub or ModHub only when you press Update. Your mod folders are never changed without your confirmation.',
       lastCheck: 'Last check',
@@ -756,7 +764,8 @@ export const strings = {
       },
       app: {
         label: 'Check for app updates',
-        detail: 'Asks GitHub once a day whether a newer version of this app is out.',
+        detail:
+          'Asks GitHub whether a newer version of this app is out: at most once a day, or at each start while an update is waiting to be installed.',
       },
       turnOn: 'Turn on',
       notNow: 'Not now',
@@ -818,7 +827,7 @@ export const strings = {
     settings: {
       groupTitle: 'App updates',
       switchLabel: 'Check for app updates',
-      sent: 'When this is on, the app asks GitHub Releases whether a newer version of SimVizion Mod Manager is out: a plain download of a small file, at most once a day. Your mods and folders are not sent.',
+      sent: 'When this is on, the app asks GitHub Releases whether a newer version of SimVizion Mod Manager is out: a plain download of a small file, at most once a day, or at each start while an update is waiting to be installed. Your mods and folders are not sent.',
       downloads:
         'An update is downloaded only when you press Install and restart, and its signature is checked before it runs.',
       lastCheck: 'Last check',
@@ -838,10 +847,14 @@ export const strings = {
       showNotes: 'Show notes',
       hideNotes: 'Hide notes',
       install: 'Install and restart',
+      installHint: 'Download the update, check its signature, install it and restart the app',
       installing: 'Installing…',
       restarting: 'Restarting…',
       retry: 'Try again',
       later: 'Later',
+      blockedFileOp:
+        'A file operation is running. Install the update once it has finished, so it is not cut short.',
+      blockedModUpdates: 'A mod update check is running. Install the update once it has finished.',
       progress: (done: string, total: string) => `${done} of ${total}`,
       percent: (fraction: number) => `${Math.floor(fraction * 100)}%`,
       preparing: 'Downloading the update',

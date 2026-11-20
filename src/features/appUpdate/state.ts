@@ -1,6 +1,7 @@
 // Pure rules for the app-update banner and the first-run prompt's choices.
 
 import type { AppUpdate } from '../../api';
+import { strings } from '../../strings';
 
 /**
  * The banner is shown while an update was found, app updates are on, and the user has not said
@@ -46,6 +47,25 @@ export function notesAreLong(text: string | null): boolean {
 
 /** What the install button is doing; `failed` offers a retry. */
 export type InstallState = 'idle' | 'installing' | 'failed';
+
+/**
+ * Why "Install and restart" cannot be used now, or null when it can. Installing ends the app, so
+ * it waits for a running file operation and for a running mod-update check (which a mod update
+ * may follow).
+ */
+export function installBlockedReason(
+  fileOperationRunning: boolean,
+  modUpdatesBusy: boolean,
+): string | null {
+  if (fileOperationRunning) return strings.appUpdates.banner.blockedFileOp;
+  if (modUpdatesBusy) return strings.appUpdates.banner.blockedModUpdates;
+  return null;
+}
+
+/** The app-update switch and "Check now" are fixed while a check runs or an install is under way. */
+export function appUpdateControlsLocked(checking: boolean, install: InstallState): boolean {
+  return checking || install === 'installing';
+}
 
 export function installButtonKey(state: InstallState): 'install' | 'installing' | 'retry' {
   return state === 'installing' ? 'installing' : state === 'failed' ? 'retry' : 'install';

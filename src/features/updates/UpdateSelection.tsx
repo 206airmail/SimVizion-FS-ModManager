@@ -2,9 +2,9 @@ import { Download } from 'lucide-react';
 import { useState } from 'react';
 import type { GameStatus, ModEntry, Profile } from '../../api';
 import { strings } from '../../strings';
-import { fileOpBlockedReason } from '../files/blocked';
 import { ReasonButton } from '../files/ReasonButton';
 import type { FileOpsController } from '../files/useFileOps';
+import { updateBlockedReason } from './blocked';
 import { installableUpdates } from './choices';
 import { UpdateManyDialog } from './UpdateManyDialog';
 
@@ -14,6 +14,8 @@ export interface UpdateSelectionProps {
   profiles: readonly Profile[];
   game: GameStatus | null;
   fileOps: FileOpsController;
+  /** A check for mod updates is running: Update waits for it. */
+  updateChecking: boolean;
 }
 
 /**
@@ -21,7 +23,13 @@ export interface UpdateSelectionProps {
  * One confirmation, then each mod is updated in its own folder, one after another, through the
  * same progress and result banners as a single update. Other folders' copies are not touched.
  */
-export function UpdateSelection({ mods, profiles, game, fileOps }: UpdateSelectionProps) {
+export function UpdateSelection({
+  mods,
+  profiles,
+  game,
+  fileOps,
+  updateChecking,
+}: UpdateSelectionProps) {
   // The list is fixed when the dialog opens: a reload underneath must not change what it does.
   const [open, setOpen] = useState<readonly ModEntry[] | null>(null);
   const updatable = installableUpdates(mods);
@@ -38,7 +46,7 @@ export function UpdateSelection({ mods, profiles, game, fileOps }: UpdateSelecti
         variant="primary"
         icon={Download}
         hint={strings.inspector.updateManyHint}
-        blockedReason={fileOpBlockedReason(game, fileOps.running !== null)}
+        blockedReason={updateBlockedReason(game, fileOps.running !== null, updateChecking)}
         onClick={() => setOpen(updatable)}
       >
         {strings.inspector.updateMany(updatable.length)}
@@ -48,6 +56,7 @@ export function UpdateSelection({ mods, profiles, game, fileOps }: UpdateSelecti
           mods={open}
           game={game}
           operationRunning={fileOps.running !== null}
+          updateChecking={updateChecking}
           onClose={() => setOpen(null)}
           onConfirm={() => {
             setOpen(null);
