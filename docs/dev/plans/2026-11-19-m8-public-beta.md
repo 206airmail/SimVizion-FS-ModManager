@@ -196,3 +196,21 @@ In parallel, I start a **Codex worker (Orca) to design the emblem options** as a
 - Fix actions on the Health screen.
 - Verifying GIANTS, Epic or Microsoft Store detection on real installs (that needs testers).
 - A 1.0 release.
+
+## Status
+
+2026-11-19: Stages 0–3 are done; Stage 4 (going public) waits for the user's approvals.
+
+- **Stage 0:** done. Contract, skeletons, commands, `tauri-plugin-updater`.
+- **Stage 1:** done. WS-A (core) and WS-C (frontend) were relaunched after a session restart cancelled them, and finished in their original worktrees.
+- **Emblem:** after three rounds of Codex designs, the user chose their own SimVizion icon for 64 px and up, with Codex's simplified "eye and SV" for 16–48 px and the header.
+- **Stage 2:** done. Updater wiring, NSIS bundle, version, icons, license and docs, CI. Three fixes came from the real-app checks:
+  - the status-bar version;
+  - the re-offer of a waiting update;
+  - ESLint for `scripts/`.
+- **Stage 3:** done.
+  - Fable found 21 issues, Codex 9.
+  - Two fixers (core, frontend) fixed every confirmed finding. The contract gained `replaceIncomplete` and `runningUnknown`.
+  - Release CSP, metadata, workflow hardening and docs were fixed by the coordinator.
+  - The installed-app checks were re-run after the fixes.
+- **Stage 4:** pending. The private-email setting and the release key are done by the user. Still to do, each with approval: the history rewrite, the force-push, going public, the tag.
