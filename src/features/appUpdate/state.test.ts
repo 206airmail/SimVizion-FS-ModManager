@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
+import { strings } from '../../strings';
 import {
+  appUpdateControlsLocked,
   bannerVisible,
+  installBlockedReason,
   installButtonKey,
   notesAreLong,
   notesPreview,
@@ -60,6 +63,27 @@ describe('notesAreLong', () => {
     expect(notesAreLong(lines.join('\n'))).toBe(true);
     expect(notesAreLong(lines.slice(0, NOTES_COLLAPSED_LINES).join('\n'))).toBe(false);
     expect(notesAreLong('x'.repeat(400))).toBe(true);
+  });
+});
+
+describe('installBlockedReason', () => {
+  it('is null when nothing is writing', () => {
+    expect(installBlockedReason(false, false)).toBeNull();
+  });
+
+  it('names a running file operation, then a running mod-update check', () => {
+    expect(installBlockedReason(true, false)).toBe(strings.appUpdates.banner.blockedFileOp);
+    expect(installBlockedReason(false, true)).toBe(strings.appUpdates.banner.blockedModUpdates);
+    expect(installBlockedReason(true, true)).toBe(strings.appUpdates.banner.blockedFileOp);
+  });
+});
+
+describe('appUpdateControlsLocked', () => {
+  it('locks the switch and Check now while checking or installing, not after a failed install', () => {
+    expect(appUpdateControlsLocked(false, 'idle')).toBe(false);
+    expect(appUpdateControlsLocked(true, 'idle')).toBe(true);
+    expect(appUpdateControlsLocked(false, 'installing')).toBe(true);
+    expect(appUpdateControlsLocked(false, 'failed')).toBe(false);
   });
 });
 
