@@ -37,6 +37,8 @@ export interface InspectorProps {
   profiles: readonly Profile[];
   game: GameStatus | null;
   fileOps: FileOpsController;
+  /** A check for mod updates is running: the Update buttons wait for it. */
+  updateChecking: boolean;
   /** Tags and notes: editing them, and the tags that exist. */
   meta: ModMetaController;
   /** Shown as a drawer over the list instead of beside it. */
@@ -56,6 +58,7 @@ export function Inspector({
   profiles,
   game,
   fileOps,
+  updateChecking,
   meta,
   overlay,
   onClose,
@@ -78,6 +81,7 @@ export function Inspector({
           profiles={profiles}
           game={game}
           fileOps={fileOps}
+          updateChecking={updateChecking}
           meta={meta}
           onLinksChanged={onLinksChanged}
         />
@@ -94,7 +98,13 @@ export function Inspector({
             <div className="mm-inspector__sections">
               {installableUpdates(mods).length > 0 && (
                 <Section title={t.multiUpdatesTitle}>
-                  <UpdateSelection mods={mods} profiles={profiles} game={game} fileOps={fileOps} />
+                  <UpdateSelection
+                    mods={mods}
+                    profiles={profiles}
+                    game={game}
+                    fileOps={fileOps}
+                    updateChecking={updateChecking}
+                  />
                 </Section>
               )}
               <Section title={t.multiTagsTitle}>
@@ -118,6 +128,7 @@ function ModDetails({
   profiles,
   game,
   fileOps,
+  updateChecking,
   meta,
   onLinksChanged,
 }: {
@@ -125,6 +136,7 @@ function ModDetails({
   profiles: readonly Profile[];
   game: GameStatus | null;
   fileOps: FileOpsController;
+  updateChecking: boolean;
   meta: ModMetaController;
   onLinksChanged: () => void;
 }) {
@@ -149,7 +161,13 @@ function ModDetails({
         </div>
 
         <div className="mm-inspector__sections">
-          <UpdateBanner mod={mod} profiles={profiles} game={game} fileOps={fileOps} />
+          <UpdateBanner
+            mod={mod}
+            profiles={profiles}
+            game={game}
+            fileOps={fileOps}
+            updateChecking={updateChecking}
+          />
 
           {mod.issues.length > 0 && (
             <Section title={t.issues}>

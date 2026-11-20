@@ -3,9 +3,9 @@ import { useState } from 'react';
 import type { GameStatus, ModEntry, Profile } from '../../api';
 import { strings } from '../../strings';
 import { Banner } from '../../ui/Feedback';
-import { fileOpBlockedReason } from '../files/blocked';
 import { ReasonButton } from '../files/ReasonButton';
 import type { FileOpsController } from '../files/useFileOps';
+import { updateBlockedReason } from './blocked';
 import { PageLinks } from './PageLinks';
 import { UpdateDialog } from './UpdateDialog';
 
@@ -16,6 +16,8 @@ export interface UpdateBannerProps {
   profiles: readonly Profile[];
   game: GameStatus | null;
   fileOps: FileOpsController;
+  /** A check for mod updates is running: Update waits for it. */
+  updateChecking: boolean;
 }
 
 /**
@@ -23,7 +25,7 @@ export interface UpdateBannerProps {
  * dialog; otherwise one line says why and the mod's page buttons take its place. Renders nothing
  * for a mod with no update.
  */
-export function UpdateBanner({ mod, profiles, game, fileOps }: UpdateBannerProps) {
+export function UpdateBanner({ mod, profiles, game, fileOps, updateChecking }: UpdateBannerProps) {
   const [open, setOpen] = useState(false);
   if (mod.update.type !== 'available') return null;
   const { version, installable } = mod.update;
@@ -40,7 +42,7 @@ export function UpdateBanner({ mod, profiles, game, fileOps }: UpdateBannerProps
               variant="primary"
               icon={Download}
               hint={t.updateHint(version)}
-              blockedReason={fileOpBlockedReason(game, fileOps.running !== null)}
+              blockedReason={updateBlockedReason(game, fileOps.running !== null, updateChecking)}
               onClick={() => setOpen(true)}
             >
               {t.updateAction}
@@ -65,6 +67,7 @@ export function UpdateBanner({ mod, profiles, game, fileOps }: UpdateBannerProps
           profiles={profiles}
           game={game}
           operationRunning={fileOps.running !== null}
+          updateChecking={updateChecking}
           onClose={() => setOpen(false)}
           onConfirm={(profileIds, names) => {
             setOpen(false);

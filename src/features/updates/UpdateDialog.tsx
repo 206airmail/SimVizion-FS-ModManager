@@ -10,8 +10,8 @@ import { Checkbox } from '../../ui/Checkbox';
 import { Dialog } from '../../ui/Dialog';
 import { Banner } from '../../ui/Feedback';
 import { Pill } from '../../ui/Pill';
-import { fileOpBlockedReason } from '../files/blocked';
 import { ReasonButton } from '../files/ReasonButton';
+import { updateBlockedReason } from './blocked';
 import { defaultFolders, isCurrent } from './choices';
 import { PageLinks } from './PageLinks';
 
@@ -24,6 +24,8 @@ export interface UpdateDialogProps {
   game: GameStatus | null;
   /** A file operation is already running in this window. */
   operationRunning: boolean;
+  /** A check for mod updates is running. */
+  updateChecking: boolean;
   onClose: () => void;
   /** The folders to update (profile ids) and the names to word the result with. */
   onConfirm: (profileIds: string[], folderNames: ReadonlyMap<string, string>) => void;
@@ -40,6 +42,7 @@ export function UpdateDialog({
   profiles,
   game,
   operationRunning,
+  updateChecking,
   onClose,
   onConfirm,
 }: UpdateDialogProps) {
@@ -79,7 +82,7 @@ export function UpdateDialog({
       plan={state.data}
       mod={mod}
       profiles={profiles}
-      blockedReason={fileOpBlockedReason(game, operationRunning)}
+      blockedReason={updateBlockedReason(game, operationRunning, updateChecking)}
       onClose={onClose}
       onConfirm={onConfirm}
     />
