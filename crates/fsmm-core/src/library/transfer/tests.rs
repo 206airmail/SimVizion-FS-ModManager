@@ -143,6 +143,7 @@ impl T {
             game: self.game.load(Ordering::SeqCst)
                 || call >= self.game_from_call.load(Ordering::SeqCst),
             server: self.server.load(Ordering::SeqCst),
+            unknown: false,
         }
     }
 
@@ -576,6 +577,183 @@ fn a_cancelled_replace_leaves_the_old_mod_in_place() {
     assert_eq!(version_in(&t.b, "fs25_same.zip"), "1.0.0.0");
 }
 
+// ---------------------------------------------------------------- execute: the last look before the old mod goes
+
+/// A replacing copy of a mod that is already in the target, ready to run.
+fn replace_fixture() -> (T, TransferPlan) {
+    let t = T::new();
+    write_mod(&t.a, "FS25_Same.zip", "New", "2.0.0.0");
+    write_mod(&t.b, "FS25_Same.zip", "Old", "1.0.0.0");
+    let plan = t.plan(&["FS25_Same.zip"], TransferMode::Copy);
+    assert_eq!(plan.clashes.len(), 1);
+    (t, plan)
+}
+
+fn assert_old_mod_kept(t: &T) {
+    assert!(
+        t.recycler.calls().is_empty(),
+        "the old mod was never binned"
+    );
+    assert_eq!(names(&t.b), ["FS25_Same.zip"], "no staged copy is left");
+    assert_eq!(version_in(&t.b, "FS25_Same.zip"), "1.0.0.0");
+}
+
+#[test]
+fn the_game_starting_during_a_replacing_copy_keeps_the_old_mod() {
+    let (t, plan) = replace_fixture();
+    // Call 0 is the up-front check, call 1 the item's own and call 2 the look just before the
+    // old mod goes to the bin: the game starts there.
+    t.game_from_call.store(2, Ordering::SeqCst);
+    let result = t.exec(&plan.plan_id, &[choice("FS25_Same", true)]).unwrap();
+    assert_eq!(
+        failed(&result),
+        [("FS25_Same".to_string(), ErrorCode::GameRunning)]
+    );
+    assert_old_mod_kept(&t);
+    assert_eq!(t.rows(), [("copy".to_string(), "gameRunning".to_string())]);
+}
+
+#[test]
+fn a_cancel_after_the_copy_verified_keeps_the_old_mod() {
+    let (t, plan) = replace_fixture();
+    // Requested during the look just before the old mod goes, after the copy loop is done.
+    t.cancel_after_call.store(2, Ordering::SeqCst);
+    let result = t.exec(&plan.plan_id, &[choice("FS25_Same", true)]).unwrap();
+    assert_eq!(
+        failed(&result),
+        [("FS25_Same".to_string(), ErrorCode::Cancelled)]
+    );
+    assert_old_mod_kept(&t);
+}
+
+#[test]
+fn an_existing_mod_changed_while_copying_is_not_recycled() {
+    let (t, plan) = replace_fixture();
+    let existing = t.b.join("FS25_Same.zip");
+    let result = t.with_env(|env| {
+        // The old mod is replaced by the user (or a sync tool) during the look before the bin.
+        let running = || {
+            let n = t.running_calls.fetch_add(1, Ordering::SeqCst);
+            if n == 2 {
+                write_mod(&t.b, "FS25_Same.zip", "Edited meanwhile", "1.5.0.0");
+            }
+            Running::default()
+        };
+        let env = OpEnv {
+            running: &running,
+            recycler: env.recycler,
+            disk: env.disk,
+        };
+        t.running_calls.store(0, Ordering::SeqCst);
+        t.lib.execute_transfer(
+            &plan.plan_id,
+            &[choice("FS25_Same", true)],
+            &t.ctx,
+            &env,
+            &|_| {},
+        )
+    });
+    let result = result.unwrap();
+    assert_eq!(
+        failed(&result),
+        [("FS25_Same".to_string(), ErrorCode::TargetChanged)]
+    );
+    assert!(t.recycler.calls().is_empty());
+    assert_eq!(names(&t.b), ["FS25_Same.zip"]);
+    assert_eq!(version_in(&t.b, "FS25_Same.zip"), "1.5.0.0");
+    assert!(existing.is_file());
+}
+
+#[test]
+fn a_move_on_one_volume_looks_again_before_recycling_the_old_mod() {
+    let (t, _) = replace_fixture();
+    let plan = t.plan(&["FS25_Same.zip"], TransferMode::Move);
+    assert!(lock(&t.lib.transfer.plans)[&plan.plan_id].renames_only);
+    // Call 0 up front, call 1 the item's, call 2 just before the old mod goes first.
+    t.game_from_call.store(2, Ordering::SeqCst);
+    let result = t.exec(&plan.plan_id, &[choice("FS25_Same", true)]).unwrap();
+    assert_eq!(
+        failed(&result),
+        [("FS25_Same".to_string(), ErrorCode::GameRunning)]
+    );
+    assert_old_mod_kept(&t);
+    assert_eq!(names(&t.a), ["FS25_Same.zip"], "the source stays");
+}
+
+#[test]
+fn a_move_across_volumes_looks_again_before_the_source_is_disposed_of() {
+    let (t, _) = replace_fixture();
+    let plan = t.plan(&["FS25_Same.zip"], TransferMode::Move);
+    // Planned as if the two folders were on different volumes (a temp dir has one volume).
+    lock(&t.lib.transfer.plans)
+        .get_mut(&plan.plan_id)
+        .unwrap()
+        .renames_only = false;
+    // Call 0 up front, 1 the item's, 2 before the old mod goes, 3 before the source goes.
+    t.game_from_call.store(3, Ordering::SeqCst);
+    let result = t.exec(&plan.plan_id, &[choice("FS25_Same", true)]).unwrap();
+    assert_eq!(
+        failed(&result),
+        [("FS25_Same".to_string(), ErrorCode::GameRunning)]
+    );
+    // The new copy is in place, the old one is in the bin and the source was not touched.
+    assert_eq!(version_in(&t.b, "FS25_Same.zip"), "2.0.0.0");
+    assert_eq!(t.recycler.calls(), [t.b.join("FS25_Same.zip")]);
+    assert_eq!(names(&t.a), ["FS25_Same.zip"]);
+}
+
+#[test]
+fn a_replacement_that_was_kept_is_a_replace_incomplete_error() {
+    assert_eq!(
+        file_op_code(&FileOpError::ReplaceIncomplete(
+            ".A.zip.0123abcd.fsmm-partial".into()
+        )),
+        ErrorCode::ReplaceIncomplete
+    );
+}
+
+// ---------------------------------------------------------------- same volume
+
+#[cfg(windows)]
+#[test]
+fn a_junction_to_another_volume_is_not_the_same_volume() {
+    let tmp = tempfile::tempdir().unwrap();
+    // The working directory of a test run is the crate folder; when it is on another drive than
+    // the temp folder, a junction in the temp folder can point there.
+    let elsewhere = std::env::current_dir().unwrap();
+    let link = tmp.path().join("looks-local");
+    if volume_of(&fs::canonicalize(&elsewhere).unwrap())
+        == volume_of(&fs::canonicalize(tmp.path()).unwrap())
+    {
+        eprintln!("skipped: the temp folder and the crate are on one volume");
+        return;
+    }
+    let made = std::process::Command::new("cmd")
+        .arg("/C")
+        .arg("mklink")
+        .arg("/J")
+        .arg(&link)
+        .arg(&elsewhere)
+        .output()
+        .unwrap();
+    assert!(made.status.success(), "mklink failed");
+    // By its path the junction is on the temp folder's drive ...
+    assert_eq!(volume_of(&link), volume_of(tmp.path()));
+    // ... but it is not.
+    assert!(!same_volume(&link, tmp.path()));
+    assert!(same_volume(tmp.path(), &tmp.path().join(".")));
+    // Removing the junction removes only the link.
+    fs::remove_dir(&link).unwrap();
+    assert!(elsewhere.is_dir());
+}
+
+#[test]
+fn folders_that_cannot_be_resolved_are_not_on_the_same_volume() {
+    let tmp = tempfile::tempdir().unwrap();
+    assert!(same_volume(tmp.path(), tmp.path()));
+    assert!(!same_volume(tmp.path(), &tmp.path().join("missing")));
+}
+
 // ---------------------------------------------------------------- execute: changes since planning
 
 #[test]
@@ -731,6 +909,47 @@ fn a_second_operation_while_one_runs_is_busy_and_reads_still_work() {
     assert!(t.exec(&other.plan_id, &[]).is_ok());
 }
 
+/// The app must not exit, nor update itself, in the middle of a file operation.
+#[test]
+fn a_running_file_operation_is_visible_to_the_app_and_refuses_its_update() {
+    let t = T::new();
+    write_mod(&t.a, "A.zip", "A", "1.0.0.0");
+    let plan = t.plan(&["A.zip"], TransferMode::Copy);
+    assert!(!t.lib.operation_running());
+
+    let seen = Mutex::new(Vec::new());
+    t.exec_with(&plan.plan_id, &[], &|_| {
+        seen.lock().unwrap().push((
+            t.lib.operation_running(),
+            t.lib.file_operation_running(),
+            t.lib.begin_app_update().err().map(|e| e.code),
+        ));
+    })
+    .unwrap();
+
+    let seen = seen.into_inner().unwrap();
+    assert!(!seen.is_empty());
+    assert!(seen
+        .iter()
+        .all(|s| *s == (true, true, Some(ErrorCode::Busy))));
+    assert!(!t.lib.operation_running());
+    assert!(t.lib.begin_app_update().is_ok());
+}
+
+/// While the app's own update holds the flags, no file operation starts.
+#[test]
+fn a_file_operation_is_refused_while_the_app_updates_itself() {
+    let t = T::new();
+    write_mod(&t.a, "A.zip", "A", "1.0.0.0");
+    let plan = t.plan(&["A.zip"], TransferMode::Copy);
+    let hold = t.lib.begin_app_update().unwrap();
+    assert_eq!(err_code(t.exec(&plan.plan_id, &[])), ErrorCode::Busy);
+    assert_eq!(err_code(t.remove(&["A.zip"])), ErrorCode::Busy);
+    assert!(names(&t.b).is_empty());
+    drop(hold);
+    assert!(t.exec(&plan.plan_id, &[]).is_ok());
+}
+
 #[test]
 fn a_panic_in_a_progress_callback_releases_the_busy_flag() {
     let t = T::new();
@@ -790,6 +1009,7 @@ fn the_server_starting_mid_operation_reports_the_server() {
             Running {
                 game: false,
                 server: n >= 1,
+                unknown: false,
             }
         };
         let env = OpEnv {

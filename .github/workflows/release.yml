@@ -1,0 +1,78 @@
+# On a version tag (v0.9.0-beta.1, ...): run every check, build the NSIS installer, sign the update
+# package with the project's updater key, and leave a DRAFT release with the installer, its .sig
+# and latest.json. A person reviews the draft and publishes it; only then do installed apps see it.
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # No dependency caches in this job: it holds the signing key, and everything is built from
+      # the lockfiles (npm ci, cargo --locked).
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+      - uses: dtolnay/rust-toolchain@39008827e6b4319a349e9a42dfc90579dd25f1ca # stable, 2026-11-15
+        with:
+          toolchain: stable
+          components: clippy, rustfmt
+      - run: npm ci
+
+      - name: The tag, the app version and the updater key are release-ready
+        shell: bash
+        run: |
+          version=$(node -p "require('./src-tauri/tauri.conf.json').version")
+          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match the app version $version"; exit 1
+          fi
+          if grep -q REPLACE_WITH_RELEASE_PUBLIC_KEY src-tauri/tauri.conf.json; then
+            echo "::error::plugins.updater.pubkey in tauri.conf.json is still the placeholder"; exit 1
+          fi
+
+      - run: cargo fmt --all --check
+      - run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      - run: cargo test --workspace --locked
+      - name: Generated TypeScript types match model.rs
+        run: |
+          npm run gen:types
+          git diff --exit-code -- src/api/types
+      - run: npm run check
+      - run: npm run check:bundle
+      - name: Third-party notices are up to date
+        run: |
+          node scripts/third-party-notices.mjs
+          git diff --exit-code -- THIRD-PARTY-NOTICES.txt
+
+      - name: Release notes from CHANGELOG.md
+        id: notes
+        shell: bash
+        run: |
+          version=${GITHUB_REF_NAME#v}
+          {
+            echo 'body<<NOTES_END'
+            node scripts/changelog-section.mjs "$version"
+            echo 'NOTES_END'
+          } >> "$GITHUB_OUTPUT"
+
+      - uses: tauri-apps/tauri-action@1deb371b0cd8bd54025b384f1cd735e725c4060f # action-v1.0.0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: SimVizion Mod Manager ${{ github.ref_name }}
+          releaseBody: ${{ steps.notes.outputs.body }}
+          releaseDraft: true
+          prerelease: false
+          updaterJsonPreferNsis: true
+          uploadUpdaterJson: true
+          args: -- --locked

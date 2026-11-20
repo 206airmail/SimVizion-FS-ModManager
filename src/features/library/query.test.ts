@@ -534,6 +534,10 @@ describe('mock dataset', () => {
       overrideActive: true,
       effectiveModsDir: profiles.find((p) => p.id === 'testing')?.path,
       loggedDescVersion: 106,
+      store: 'steam',
+      launchable: true,
+      userDirSource: 'detected',
+      userDir: 'C:\\Users\\Player\\Documents\\My Games\\FarmingSimulator2025',
     });
   });
 

@@ -39,13 +39,16 @@ const STAMP_LEN: usize = 19;
 pub enum OpError {
     GameRunning,
     ServerRunning,
+    /// The process list could not be read, so nothing can be said about the game: refused.
+    RunningUnknown,
     SettingsMissing,
     /// Not UTF-8, not well-formed, or the override element cannot be located. Position only.
     SettingsUnreadable,
     /// The file changed between the read and the write; nothing was written.
     SettingsChanged,
-    /// Backup, temp file, replace or verification failed; the original is in place.
-    /// The detail is an io error kind or a step name, never file text.
+    /// Backup, temp file, replace or verification failed; before the replace the original is in
+    /// place, after a failed verification (`verify`) the file is whatever is there now and the
+    /// backup holds the original. The detail is an io error kind or a step name, never file text.
     WriteFailed(String),
     NoBackup,
 }
@@ -55,6 +58,7 @@ impl fmt::Display for OpError {
         match self {
             OpError::GameRunning => write!(f, "the game is running"),
             OpError::ServerRunning => write!(f, "the dedicated server is running"),
+            OpError::RunningUnknown => write!(f, "the running programs could not be listed"),
             OpError::SettingsMissing => write!(f, "gameSettings.xml does not exist"),
             OpError::SettingsUnreadable => write!(f, "gameSettings.xml could not be read"),
             OpError::SettingsChanged => write!(f, "gameSettings.xml changed during the write"),
@@ -71,6 +75,7 @@ impl From<OpError> for ApiError {
         let code = match &e {
             OpError::GameRunning => ErrorCode::GameRunning,
             OpError::ServerRunning => ErrorCode::ServerRunning,
+            OpError::RunningUnknown => ErrorCode::RunningUnknown,
             OpError::SettingsMissing => ErrorCode::SettingsMissing,
             OpError::SettingsUnreadable => ErrorCode::SettingsUnreadable,
             OpError::SettingsChanged => ErrorCode::SettingsChanged,
@@ -94,13 +99,16 @@ fn step_failed(step: &str) -> OpError {
     OpError::WriteFailed(step.to_string())
 }
 
-/// Refuses while the game or the dedicated server runs.
+/// Refuses while the game or the dedicated server runs, and when that cannot be told (the process
+/// list could not be read): a guard fails closed.
 pub fn check_not_running(running: &dyn Fn() -> Running) -> Result<(), OpError> {
     let now = running();
     if now.game {
         Err(OpError::GameRunning)
     } else if now.server {
         Err(OpError::ServerRunning)
+    } else if now.unknown {
+        Err(OpError::RunningUnknown)
     } else {
         Ok(())
     }
@@ -550,16 +558,11 @@ fn stage_temp(path: &Path, bytes: &[u8]) -> Result<TempFile, OpError> {
     Ok(temp)
 }
 
-/// Replaces `path` with `bytes` through a temp file and a rename, with no checks.
-fn replace_file(path: &Path, bytes: &[u8]) -> Result<(), OpError> {
-    let temp = stage_temp(path, bytes)?;
-    fs::rename(&temp.0, path).map_err(|e| io_failed(&e))
-}
-
 /// Replaces `path` with `new_bytes` atomically (temp file in the same folder, flush, rename),
 /// but only if the file still holds `expected` and `running` reports neither the game nor the
-/// server, both checked right before the rename. Re-reads and verifies afterwards; on a
-/// verification failure, puts `expected` back. Never leaves the temp file behind.
+/// server, both checked right before the rename. Re-reads and verifies afterwards; when the file
+/// is no longer what was written it is left as it is (`WriteFailed("verify")`; the caller's backup
+/// keeps the old bytes). Never leaves the temp file behind.
 ///
 /// A read-only file is never made writable: it fails with `WriteFailed` and stays untouched.
 pub fn write_settings(
@@ -607,12 +610,10 @@ pub(crate) fn write_settings_with(
     }
     match fs::read(path) {
         Ok(now) if now == new_bytes => Ok(()),
-        _ => {
-            // The replace happened but the file is not what was written: put the original back.
-            match replace_file(path, expected) {
-                Ok(()) => Err(step_failed("verify")),
-                Err(_) => Err(step_failed("verify-restore")),
-            }
-        }
+        // The replace happened but the file is not what was written: someone else wrote to it
+        // since (a settings editor, the game), or it cannot be read right now. Whatever is there
+        // is left alone, never overwritten with the old bytes; the backup made before this write
+        // still holds them.
+        _ => Err(step_failed("verify")),
     }
 }

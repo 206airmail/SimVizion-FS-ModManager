@@ -147,3 +147,32 @@ Rejected: copying the game's protocol; guessing CDN URLs from the mod id.
 Why: an IPC call that opens any URL it is given would let any script in the webview open arbitrary pages. The frontend asks `openModLink(modName, kind)`, and the core reads the URL from the catalog cache or the user's stored link, opening only `http` and `https`. Manual source links (KingMods, itch.io, forums) are stored per lower-cased mod name in `library.sqlite` `mod_meta.source_url` and survive rescans, copies and updates. They get no update checks, because those sites have no catalog.
 
 Rejected: passing URLs to the opener plugin from the frontend; scraping third-party mod sites.
+
+## 2026-11-19: M8 — public beta: NSIS per-user, unsigned, updates signed with the project key
+
+Why: the source repo goes public under MIT, and the first release is a beta (`0.9.0-beta.N`, published as normal GitHub releases so `releases/latest` and the updater find them).
+
+- **Installer:** NSIS only (MSI cannot take a pre-release version), per-user (no admin), `embedBootstrapper` for WebView2. The uninstaller's "Delete the application data" box removes `%APPDATA%` and `%LOCALAPPDATA%\com.simvizion.modmanager`; unticked keeps them.
+- **No Authenticode signing yet:** the user chose to ship the beta unsigned (Azure Artifact Signing is US/Canada-only for individuals; OV certificates cost money and give no instant SmartScreen trust either). The README explains the SmartScreen warning. Codex review R5 is accepted on this basis.
+- **App updates:** `tauri-plugin-updater`, opt-in like every online feature, checking `releases/latest/download/latest.json` at most once a day or at each start while an update waits. Packages are signed with the project's minisign key (`75DC04A29A8CA5C2`); the private key and its password exist only with the owner and as GitHub secrets. `requireSignedVersion` binds each signature to its version, so an older signed build cannot be replayed as newer.
+- **Releases come from CI on a tag, as a draft** the owner publishes; the job builds with `--locked` and restores no caches.
+
+Rejected: MSI; offline WebView2 (+127 MB); always-on update checks; building releases on this machine.
+
+## 2026-11-19: M8 — launch targets, the chosen game folder and Microsoft Store detection live in the core
+
+Why: as with M7's links, nothing that is started or opened comes from the frontend. The core builds the launch target per store (Steam URL, Epic launcher URL from the manifest's `AppName`, the GIANTS exe, a Microsoft Store `shell:AppsFolder` id), each id restricted to a safe alphabet. A game folder the user chooses must hold `gameSettings.xml` or `mods`, wins over detection, and stays the choice even while unavailable, so a write never silently goes to another folder. Microsoft Store detection (package registration, `LocalCache\Local` user folder) is fixture-tested only and labelled unverified.
+
+Rejected: the frontend passing paths or URLs; skipping the Microsoft Store version; claiming support without a test install.
+
+## 2026-11-19: M8 — settings backups and Undo belong to one settings file
+
+Why: with a chosen game folder there can be two `gameSettings.xml` files, and a global backup folder let Restore write one folder's settings (and passwords) into the other (reviews R2/F-13). Backups now live in `backups/<hash of the settings path>/`, and each journal row records its settings file; Undo and Restore only act on the matching file. Older loose backups are never restored automatically.
+
+Rejected: one shared backup folder; asking which backup to use every time.
+
+## 2026-11-19: M8 — a staged copy is ours alone, and is never thrown away after the old mod went
+
+Why: the reviews found that the fixed staging name could delete a same-named entry the app did not create (R1), and that a failed rename after the old mod was recycled deleted the verified new copy (F-03). Staging names are now unique and created exclusively, and only the entry an operation created is ever removed. Once the old mod is in the Recycle Bin, a failing rename is retried for a few seconds and then the new file is kept under its hidden name (`replaceIncomplete`). Every replace looks again at the game, Cancel and the target just before recycling (R3), and an unreadable process list refuses writes (`runningUnknown`, R7/F-07).
+
+Rejected: cleaning up leftovers by name; recycling first and copying after.

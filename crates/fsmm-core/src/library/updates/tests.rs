@@ -217,6 +217,7 @@ impl T {
                 game: self.game.load(Ordering::SeqCst)
                     || call >= self.game_from_call.load(Ordering::SeqCst),
                 server: false,
+                unknown: false,
             }
         };
         let files = OpEnv {
@@ -1324,9 +1325,11 @@ fn an_asset_with_another_file_name_is_never_installed() {
 
 #[test]
 fn the_file_name_is_compared_ignoring_case_and_percent_encoding() {
+    // Releases of the repository the catalog named (`GH_REPO`); these used to point at `o/r`,
+    // which only passed because nothing compared the asset's repository with it.
     for url in [
-        "https://github.com/o/r/releases/download/v2/fs25_courseplay.ZIP",
-        "https://github.com/o/r/releases/download/v2/FS25%5FCourseplay.zip",
+        "https://github.com/Courseplay/Courseplay_FS25/releases/download/v2/fs25_courseplay.ZIP",
+        "https://github.com/Courseplay/Courseplay_FS25/releases/download/v2/FS25%5FCourseplay.zip",
     ] {
         let new = bytes_of("2.0.0.0", 10);
         let t = T::with(
@@ -1342,6 +1345,55 @@ fn the_file_name_is_compared_ignoring_case_and_percent_encoding() {
         assert_eq!(result.done, vec![t.pa.clone()], "{url}");
         // The installed name stays the one the folder had.
         assert_eq!(names(&t.a), ["FS25_Courseplay.zip"]);
+    }
+}
+
+/// A GitHub update whose asset is at `url`, run through to the end.
+fn github_asset_install(url: &str) -> (T, Result<OpResult, ApiError>) {
+    let t = T::with(
+        FakeCatalog::new()
+            .with_row(courseplay_row("v2.0.0.0"))
+            .with_detail(github_detail("v2.0.0.0", "v2.0.0.0", None, url)),
+        FakeWeb::new().with_payload(url, bytes_of("2.0.0.0", 10)),
+    );
+    t.put(&t.a, "FS25_Courseplay.zip", "1.0.0.0");
+    t.enable();
+    t.check(false).unwrap();
+    let result = t.install(COURSEPLAY, &[&t.pa]);
+    (t, result)
+}
+
+#[test]
+fn a_github_asset_must_be_a_release_of_the_repository_the_catalog_named() {
+    // The repository of the stored match is Courseplay/Courseplay_FS25 (`GH_REPO`).
+    for url in [
+        GH_URL,
+        // Case does not matter on GitHub.
+        "https://github.com/courseplay/COURSEPLAY_FS25/releases/download/v2/FS25_Courseplay.zip",
+    ] {
+        let (t, result) = github_asset_install(url);
+        assert_eq!(result.unwrap().done, vec![t.pa.clone()], "{url}");
+    }
+    for url in [
+        // Another owner, another repository, a repository with the right name as a prefix.
+        "https://github.com/attacker/Courseplay_FS25/releases/download/v2/FS25_Courseplay.zip",
+        "https://github.com/Courseplay/Other_FS25/releases/download/v2/FS25_Courseplay.zip",
+        "https://github.com/Courseplay/Courseplay_FS25x/releases/download/v2/FS25_Courseplay.zip",
+        // The right repository but not a release asset.
+        "https://github.com/Courseplay/Courseplay_FS25/raw/main/FS25_Courseplay.zip",
+        "https://github.com/Courseplay/Courseplay_FS25/archive/refs/tags/FS25_Courseplay.zip",
+        "https://github.com/Courseplay/Courseplay_FS25/releases/latest/FS25_Courseplay.zip",
+    ] {
+        let (t, result) = github_asset_install(url);
+        let error = result.unwrap_err();
+        assert_eq!(error.code, ErrorCode::NotInstallable, "{url}");
+        assert_eq!(error.detail.as_deref(), Some("repoMismatch"), "{url}");
+        assert!(
+            t.web.downloads().is_empty(),
+            "nothing was downloaded: {url}"
+        );
+        assert_eq!(names(&t.a), ["FS25_Courseplay.zip"]);
+        assert!(t.journal().is_empty() && t.recycler.calls().is_empty());
     }
 }
 
@@ -1436,6 +1488,120 @@ fn a_modhub_update_goes_through_the_page_link() {
     );
     assert_eq!(kinds(&t.journal()), [("recycle", "ok"), ("update", "ok")]);
     assert_eq!(t.recycler.binned(), ["FS25_Courseplay.zip"]);
+}
+
+#[test]
+fn a_download_is_limited_to_what_its_source_promised() {
+    // ModHub: the page's size, 10% more and a megabyte.
+    let file = modhub_file("8.1.0.3");
+    let t = modhub_world(file);
+    t.install(COURSEPLAY, &[&t.pa]).unwrap();
+    assert_eq!(
+        t.web.download_ceilings(),
+        [3_974_103 + 397_410 + 1024 * 1024]
+    );
+    // GitHub names no size: the hard maximum of 8 GiB.
+    let (t, _) = github_world();
+    t.install(COURSEPLAY, &[&t.pa]).unwrap();
+    assert_eq!(t.web.download_ceilings(), [8 * 1024 * 1024 * 1024]);
+}
+
+#[test]
+fn a_download_never_takes_the_free_space_below_the_reserve() {
+    let (t, new) = github_world();
+    let old = fs::read(t.a.join("FS25_Courseplay.zip")).unwrap();
+    assert!(old.len() < 2000 && new.len() > 3000);
+    // Room for 2000 bytes more than the reserve; the download is larger than that.
+    t.disk.set(SPACE_RESERVE + 2000);
+    let result = t.install(COURSEPLAY, &[&t.pa]).unwrap();
+    assert_eq!(failed(&result), [(t.pa.clone(), ErrorCode::VerifyFailed)]);
+    assert_eq!(t.web.download_ceilings(), [2000]);
+    // Nothing was replaced and no partial file is left behind.
+    assert_eq!(names(&t.a), ["FS25_Courseplay.zip"]);
+    assert_eq!(fs::read(t.a.join("FS25_Courseplay.zip")).unwrap(), old);
+    assert!(t.recycler.calls().is_empty());
+
+    // With no room beyond the reserve, nothing is even started.
+    t.disk.set(SPACE_RESERVE);
+    let error = t.install(COURSEPLAY, &[&t.pa]).unwrap_err();
+    assert_eq!(error.code, ErrorCode::NotEnoughSpace);
+    assert_eq!(t.web.downloads().len(), 1);
+}
+
+#[test]
+fn a_download_that_outgrows_its_ceiling_stops_with_verify_failed() {
+    // Far larger than the 3.79 MB the page promised (ceiling about 5.4 MB).
+    let t = modhub_world(bytes_of("8.1.0.3", 9_000_000));
+    let old = fs::read(t.a.join("FS25_Courseplay.zip")).unwrap();
+    let result = t.install(COURSEPLAY, &[&t.pa]).unwrap();
+    assert_eq!(failed(&result), [(t.pa.clone(), ErrorCode::VerifyFailed)]);
+    assert_eq!(names(&t.a), ["FS25_Courseplay.zip"]);
+    assert_eq!(fs::read(t.a.join("FS25_Courseplay.zip")).unwrap(), old);
+    assert!(t.recycler.calls().is_empty());
+    assert_eq!(kinds(&t.journal()), [("update", "verifyFailed")]);
+}
+
+/// A web whose page request raises the Cancel flag, as a user pressing Cancel while the
+/// download is being resolved would.
+struct CancelsOnPage<'a> {
+    lib: &'a Library,
+    web: &'a FakeWeb,
+}
+
+impl Web for CancelsOnPage<'_> {
+    fn fetch_page(&self, url: &str) -> Result<String, NetError> {
+        self.lib.cancel_operation();
+        self.web.fetch_page(url)
+    }
+
+    fn download(
+        &self,
+        url: &str,
+        referer: Option<&str>,
+        max_bytes: u64,
+        sink: &mut dyn Write,
+        progress: &mut dyn FnMut(u64),
+        cancel: &AtomicBool,
+    ) -> Result<u64, NetError> {
+        self.web
+            .download(url, referer, max_bytes, sink, progress, cancel)
+    }
+}
+
+#[test]
+fn a_cancel_pressed_while_the_download_is_resolved_is_not_thrown_away() {
+    let t = modhub_world(modhub_file("8.1.0.3"));
+    let old = fs::read(t.a.join("FS25_Courseplay.zip")).unwrap();
+    let web = CancelsOnPage {
+        lib: &t.lib,
+        web: &t.web,
+    };
+    let running = Running::default;
+    let files = OpEnv {
+        running: &running,
+        recycler: &t.recycler,
+        disk: &t.disk,
+    };
+    let now = || t.now();
+    let env = UpdateEnv {
+        catalog: &t.catalog,
+        web: &web,
+        files: &files,
+        now: &now,
+    };
+    let result = t
+        .lib
+        .install_update(COURSEPLAY, &ids(&[&t.pa]), &t.ctx, &env, &|_| {})
+        .unwrap();
+    assert_eq!(failed(&result), [(t.pa.clone(), ErrorCode::Cancelled)]);
+    assert!(t.web.downloads().is_empty(), "nothing was downloaded");
+    assert_eq!(fs::read(t.a.join("FS25_Courseplay.zip")).unwrap(), old);
+    assert_eq!(names(&t.a), ["FS25_Courseplay.zip"]);
+    assert!(t.recycler.calls().is_empty());
+
+    // The next operation starts clean: a cancel does not outlive the call that took it.
+    let again = t.install(COURSEPLAY, &[&t.pa]).unwrap();
+    assert_eq!(again.done, vec![t.pa.clone()]);
 }
 
 #[test]

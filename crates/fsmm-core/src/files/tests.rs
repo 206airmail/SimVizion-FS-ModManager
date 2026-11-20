@@ -91,9 +91,34 @@ fn folder_mod(root: &Path) {
     fs::create_dir_all(root.join("empty")).unwrap();
 }
 
+/// `true` for `.<name>.<8 hex digits>.fsmm-partial`.
+fn is_staging_of(entry: &str, name: &str) -> bool {
+    let Some(rest) = entry
+        .strip_prefix('.')
+        .and_then(|e| e.strip_prefix(name))
+        .and_then(|e| e.strip_prefix('.'))
+        .and_then(|e| e.strip_suffix(".fsmm-partial"))
+    else {
+        return false;
+    };
+    rest.len() == 8 && rest.bytes().all(|b| b.is_ascii_hexdigit())
+}
+
 #[test]
-fn staging_name_is_hidden_and_suffixed() {
-    assert_eq!(staging_name("FS25_Mod.zip"), ".FS25_Mod.zip.fsmm-partial");
+fn staging_name_is_hidden_suffixed_and_never_repeats() {
+    let first = staging_name("FS25_Mod.zip");
+    assert!(is_staging_of(&first, "FS25_Mod.zip"), "{first}");
+    let all: std::collections::HashSet<String> =
+        (0..200).map(|_| staging_name("FS25_Mod.zip")).collect();
+    assert_eq!(all.len(), 200);
+}
+
+#[test]
+fn a_staged_copy_is_ignored_by_the_scanner() {
+    let d = dirs();
+    fs::write(d.dst.join(staging_name("FS25_A.zip")), b"half").unwrap();
+    fs::create_dir(d.dst.join(staging_name("FS25_B"))).unwrap();
+    assert!(scan::enumerate(&d.dst).unwrap().0.is_empty());
 }
 
 #[test]
@@ -335,14 +360,66 @@ fn the_staged_copy_is_invisible_to_the_scanner_while_it_exists() {
     assert_eq!(scan::enumerate(&d.dst).unwrap().0.len(), 2);
 }
 
+/// An entry of the user's with the old fixed staging name, as a folder with content: a copy of
+/// `A.zip` must never delete it (it was removed before, as "a leftover").
 #[test]
-fn a_leftover_staged_copy_is_replaced() {
+fn a_folder_with_the_old_staging_name_is_never_removed() {
     let d = dirs();
     let src = d.src.join("A.zip");
     zip_mod(&src, 100);
-    fs::write(d.dst.join(staging_name("A.zip")), b"left by a crash").unwrap();
+    let theirs = d.dst.join(".A.zip.fsmm-partial");
+    write_folder(&theirs, &[("notes.txt", b"mine")]);
+    let leftover = d.dst.join(".A.zip.00000000.fsmm-partial");
+    fs::write(&leftover, b"left by a crash").unwrap();
+
     copy_staged(&src, &d.dst, &mut |_| {}, &never()).unwrap();
-    assert_eq!(names(&d.dst), ["A.zip"]);
+    assert_eq!(
+        names(&d.dst),
+        [
+            ".A.zip.00000000.fsmm-partial",
+            ".A.zip.fsmm-partial",
+            "A.zip"
+        ]
+    );
+    assert_eq!(fs::read(theirs.join("notes.txt")).unwrap(), b"mine");
+    assert_eq!(fs::read(&leftover).unwrap(), b"left by a crash");
+
+    // A failing copy leaves them alone too.
+    let b = d.src.join("B.zip");
+    zip_mod(&b, 100);
+    write_folder(&d.dst.join(".B.zip.fsmm-partial"), &[("n.txt", b"x")]);
+    let err = copy_staged_with(&b, &d.dst, &mut |_| {}, &never(), &|staged| {
+        fs::write(staged, b"damaged").unwrap();
+    })
+    .unwrap_err();
+    assert!(matches!(err, FileOpError::Verify(_)), "{err}");
+    assert!(d.dst.join(".B.zip.fsmm-partial/n.txt").is_file());
+    assert!(!d.dst.join("B.zip").exists());
+}
+
+#[test]
+fn two_copies_of_one_mod_use_two_staging_names() {
+    let d = dirs();
+    let src = d.src.join("A.zip");
+    zip_mod(&src, 100);
+    let names_seen = std::cell::RefCell::new(Vec::new());
+    let first = copy_staged_with(&src, &d.dst, &mut |_| {}, &never(), &|staged| {
+        names_seen
+            .borrow_mut()
+            .push(staged.file_name().unwrap().to_string_lossy().into_owned());
+    })
+    .unwrap();
+    fs::remove_file(first).unwrap();
+    copy_staged_with(&src, &d.dst, &mut |_| {}, &never(), &|staged| {
+        names_seen
+            .borrow_mut()
+            .push(staged.file_name().unwrap().to_string_lossy().into_owned());
+    })
+    .unwrap();
+    let seen = names_seen.into_inner();
+    assert_eq!(seen.len(), 2);
+    assert_ne!(seen[0], seen[1]);
+    assert!(seen.iter().all(|n| is_staging_of(n, "A.zip")), "{seen:?}");
 }
 
 #[test]
@@ -625,11 +702,20 @@ fn the_download_is_staged_under_a_hidden_name_and_verified_before_the_old_mod_go
         },
     )
     .unwrap();
-    let staged = r#"[".FS25_X.zip.fsmm-partial", "FS25_X.zip"]"#;
-    assert_eq!(
-        order.into_inner(),
-        [format!("fill {staged}"), format!("rename {staged}")]
-    );
+    // Both looks saw the old mod and one staged file under a name of this operation.
+    let order = order.into_inner();
+    assert_eq!(order.len(), 2);
+    for (line, step) in order.iter().zip(["fill", "rename"]) {
+        let listed = line.strip_prefix(step).unwrap().trim();
+        let entries: Vec<&str> = listed
+            .trim_matches(|c| c == '[' || c == ']')
+            .split(", ")
+            .map(|e| e.trim_matches('"'))
+            .collect();
+        assert_eq!(entries.len(), 2, "{line}");
+        assert!(is_staging_of(entries[0], "FS25_X.zip"), "{line}");
+        assert_eq!(entries[1], "FS25_X.zip", "{line}");
+    }
 }
 
 fn assert_untouched(d: &Dirs, old: &[u8]) {
@@ -820,13 +906,12 @@ fn an_old_mod_that_is_still_there_after_before_rename_is_never_overwritten() {
 }
 
 #[test]
-fn a_leftover_staged_file_is_replaced_not_reused() {
+fn a_leftover_staged_file_is_neither_reused_nor_removed() {
     let d = dirs();
-    fs::write(
-        d.dst.join(staging_name("FS25_X.zip")),
-        b"leftover from a crash",
-    )
-    .unwrap();
+    let leftover = d.dst.join(staging_name("FS25_X.zip"));
+    fs::write(&leftover, b"leftover from a crash").unwrap();
+    let theirs = d.dst.join(".FS25_X.zip.fsmm-partial");
+    write_folder(&theirs, &[("keep.txt", b"mine")]);
     let new = mod_zip_bytes("1.1", 10);
     let path = install_download(
         &d.dst,
@@ -837,7 +922,211 @@ fn a_leftover_staged_file_is_replaced_not_reused() {
     )
     .unwrap();
     assert_eq!(fs::read(path).unwrap(), new);
+    assert_eq!(fs::read(&leftover).unwrap(), b"leftover from a crash");
+    assert_eq!(fs::read(theirs.join("keep.txt")).unwrap(), b"mine");
+    assert_eq!(names(&d.dst).len(), 3);
+
+    // A failing download leaves them alone as well.
+    let err = install_download(
+        &d.dst,
+        "FS25_Y.zip",
+        &mut |_: &mut File| Err(FileOpError::Io("BrokenPipe".to_string())),
+        &check_of("1.1"),
+        &mut nothing(),
+    )
+    .unwrap_err();
+    assert!(matches!(err, FileOpError::Io(_)));
+    assert_eq!(fs::read(&leftover).unwrap(), b"leftover from a crash");
+    assert!(theirs.join("keep.txt").is_file());
+    assert_eq!(names(&d.dst).len(), 3);
+}
+
+// ------------------------------------------------ a rename that fails after the old mod is gone
+
+/// A rename that fails `failures` times with `kind`, then works.
+fn failing_rename(
+    failures: std::cell::Cell<u32>,
+    kind: io::ErrorKind,
+) -> impl Fn(&Path, &Path) -> io::Result<()> {
+    move |from, to| {
+        if failures.get() > 0 {
+            failures.set(failures.get() - 1);
+            return Err(io::Error::new(kind, "held by another process"));
+        }
+        fs::rename(from, to)
+    }
+}
+
+fn quick<'a>(rename: &'a dyn Fn(&Path, &Path) -> io::Result<()>) -> Publish<'a> {
+    Publish {
+        rename,
+        retry_for: Duration::from_millis(200),
+        pause: Duration::from_millis(5),
+    }
+}
+
+#[test]
+fn a_download_whose_rename_keeps_failing_is_kept_after_the_old_mod_went() {
+    let d = dirs();
+    let old = write_old(&d);
+    let new = mod_zip_bytes("1.1", 10);
+    let rename = failing_rename(
+        std::cell::Cell::new(u32::MAX),
+        io::ErrorKind::PermissionDenied,
+    );
+    let err = install_download_with(
+        &d.dst,
+        "FS25_X.zip",
+        &mut filler(new.clone()),
+        &check_of("1.1"),
+        &mut || {
+            d.recycler
+                .recycle(&d.dst.join("FS25_X.zip"))
+                .map_err(FileOpError::Recycle)
+        },
+        &quick(&rename),
+    )
+    .unwrap_err();
+    let FileOpError::ReplaceIncomplete(staged) = err else {
+        panic!("expected ReplaceIncomplete, got {err:?}");
+    };
+    assert!(is_staging_of(&staged, "FS25_X.zip"), "{staged}");
+    // The verified download is still there, byte for byte; the old mod is in the bin.
+    assert_eq!(fs::read(d.dst.join(&staged)).unwrap(), new);
+    assert_eq!(names(&d.dst), [staged]);
+    assert_eq!(d.recycler.binned(), ["FS25_X.zip"]);
+    assert_eq!(fs::read(&d.recycler.binned_files()[0]).unwrap(), old);
+}
+
+#[test]
+fn a_replacing_copy_whose_rename_keeps_failing_is_kept_after_the_old_mod_went() {
+    let d = dirs();
+    let src = d.src.join("FS25_X.zip");
+    zip_mod(&src, 200);
+    write_old(&d);
+    let rename = failing_rename(
+        std::cell::Cell::new(u32::MAX),
+        io::ErrorKind::PermissionDenied,
+    );
+    let err = stage(
+        &src,
+        &d.dst,
+        &mut |_| {},
+        &never(),
+        &|_| {},
+        &mut || {
+            d.recycler
+                .recycle(&d.dst.join("FS25_X.zip"))
+                .map_err(FileOpError::Recycle)
+        },
+        true,
+        &quick(&rename),
+    )
+    .unwrap_err();
+    let FileOpError::ReplaceIncomplete(staged) = err else {
+        panic!("expected ReplaceIncomplete, got {err:?}");
+    };
+    assert_eq!(
+        fs::read(d.dst.join(&staged)).unwrap(),
+        fs::read(&src).unwrap()
+    );
+    assert_eq!(names(&d.dst), [staged]);
+}
+
+#[test]
+fn a_rename_that_fails_briefly_is_retried_and_succeeds() {
+    let d = dirs();
+    write_old(&d);
+    let new = mod_zip_bytes("1.1", 10);
+    // Fails three times with a sharing violation (os error 32), then works.
+    let rename = failing_rename(std::cell::Cell::new(3), io::ErrorKind::PermissionDenied);
+    let path = install_download_with(
+        &d.dst,
+        "FS25_X.zip",
+        &mut filler(new.clone()),
+        &check_of("1.1"),
+        &mut || {
+            d.recycler
+                .recycle(&d.dst.join("FS25_X.zip"))
+                .map_err(FileOpError::Recycle)
+        },
+        &quick(&rename),
+    )
+    .unwrap();
+    assert_eq!(fs::read(path).unwrap(), new);
     assert_eq!(names(&d.dst), ["FS25_X.zip"]);
+}
+
+#[test]
+fn a_rename_error_that_is_not_transient_is_not_retried() {
+    let d = dirs();
+    let new = mod_zip_bytes("1.1", 10);
+    let calls = std::cell::Cell::new(0u32);
+    let rename = |_: &Path, _: &Path| {
+        calls.set(calls.get() + 1);
+        Err(io::Error::from(io::ErrorKind::NotFound))
+    };
+    let err = install_download_with(
+        &d.dst,
+        "FS25_X.zip",
+        &mut filler(new),
+        &check_of("1.1"),
+        &mut nothing(),
+        &quick(&rename),
+    )
+    .unwrap_err();
+    // Even a rename error that is not transient keeps the file once the old mod is gone.
+    assert!(matches!(err, FileOpError::ReplaceIncomplete(_)), "{err:?}");
+    assert_eq!(calls.get(), 1);
+}
+
+#[test]
+fn a_plain_copy_whose_rename_fails_removes_its_staged_copy() {
+    let d = dirs();
+    let src = d.src.join("FS25_X.zip");
+    zip_mod(&src, 200);
+    let rename = failing_rename(
+        std::cell::Cell::new(u32::MAX),
+        io::ErrorKind::PermissionDenied,
+    );
+    let err = stage(
+        &src,
+        &d.dst,
+        &mut |_| {},
+        &never(),
+        &|_| {},
+        &mut nothing(),
+        false,
+        &quick(&rename),
+    )
+    .unwrap_err();
+    // Nothing was replaced, so there is nothing to keep.
+    assert!(matches!(err, FileOpError::Io(_)), "{err:?}");
+    assert!(names(&d.dst).is_empty());
+}
+
+#[test]
+fn a_failure_before_the_old_mod_goes_still_removes_the_staged_file() {
+    let d = dirs();
+    let old = write_old(&d);
+    d.recycler.refuse(&d.dst.join("FS25_X.zip"));
+    let rename = |from: &Path, to: &Path| fs::rename(from, to);
+    let err = install_download_with(
+        &d.dst,
+        "FS25_X.zip",
+        &mut filler(mod_zip_bytes("1.1", 10)),
+        &check_of("1.1"),
+        &mut || {
+            d.recycler
+                .recycle(&d.dst.join("FS25_X.zip"))
+                .map_err(FileOpError::Recycle)
+        },
+        &quick(&rename),
+    )
+    .unwrap_err();
+    assert!(matches!(err, FileOpError::Recycle(_)), "{err:?}");
+    assert_eq!(names(&d.dst), ["FS25_X.zip"]);
+    assert_eq!(fs::read(d.dst.join("FS25_X.zip")).unwrap(), old);
 }
 
 #[test]

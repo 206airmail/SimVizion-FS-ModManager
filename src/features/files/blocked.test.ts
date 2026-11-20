@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import type { GameStatus } from '../../api';
+import type { GuardedGameStatus } from '../shell/launch';
 import { strings } from '../../strings';
 import { fileOpBlockedReason } from './blocked';
 import { createProgressStore, progressFraction } from './progress';
 
-const game = (overrides: Partial<GameStatus> = {}): GameStatus => ({
+const game = (overrides: Partial<GuardedGameStatus> = {}): GuardedGameStatus => ({
   gameVersion: '1.25.1.0',
   gameRunning: false,
   serverRunning: false,
@@ -12,6 +12,10 @@ const game = (overrides: Partial<GameStatus> = {}): GameStatus => ({
   overrideActive: true,
   effectiveModsDir: null,
   loggedDescVersion: null,
+  store: 'steam',
+  launchable: true,
+  userDirSource: 'detected',
+  userDir: null,
   ...overrides,
 });
 
@@ -19,6 +23,15 @@ describe('fileOpBlockedReason', () => {
   it('is null when nothing stands in the way, including before the status is known', () => {
     expect(fileOpBlockedReason(game(), false)).toBeNull();
     expect(fileOpBlockedReason(null, false)).toBeNull();
+  });
+
+  it('blocks, with its own wording, while a launch is waiting for the game to appear', () => {
+    expect(fileOpBlockedReason(game({ launching: true }), false)).toBe(
+      strings.fileOps.blockedStarting,
+    );
+    expect(fileOpBlockedReason(game({ launching: true, gameRunning: true }), false)).toBe(
+      strings.fileOps.blockedGame,
+    );
   });
 
   it('names the game, then the server, then a running operation', () => {

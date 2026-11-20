@@ -198,6 +198,93 @@ pub struct GameStatus {
     pub effective_mods_dir: Option<String>,
     /// The `ModDesc Version` the game printed in its last log.
     pub logged_desc_version: Option<u32>,
+    /// Where the first install found comes from; `None` when no install was found.
+    pub store: Option<GameStore>,
+    /// Whether "Launch game" can start that install (plan M8).
+    pub launchable: bool,
+    /// How the game's user folder (`gameSettings.xml`, `mods`, savegames) was found.
+    pub user_dir_source: UserDirSource,
+    /// The user folder itself, for the no-game screen and Settings.
+    pub user_dir: Option<String>,
+}
+
+/// The shop a game install comes from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub enum GameStore {
+    Steam,
+    Giants,
+    Epic,
+    /// The Microsoft Store / Xbox app version (plan M8; detection not verified on a real install).
+    MicrosoftStore,
+}
+
+/// How the user folder was found (plan M8).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub enum UserDirSource {
+    /// `DocumentsMy GamesFarmingSimulator2025`, or the Microsoft Store package folder.
+    Detected,
+    /// The folder the user chose with "Choose game folder", which overrides detection.
+    Chosen,
+    /// Not found: the app shows the no-game screen.
+    None,
+}
+
+/// One mod with issues, for the Health screen (plan M8).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct HealthRow {
+    pub profile_id: String,
+    pub profile_name: String,
+    /// `ModEntry::id`, to open the mod in its folder.
+    pub mod_id: String,
+    pub mod_name: String,
+    pub title: String,
+    pub issues: Vec<ModIssue>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct HealthCount {
+    pub kind: IssueKind,
+    /// Mods with at least one issue of this kind.
+    pub count: u32,
+}
+
+/// Every mod with issues in every registered folder, and how many mods have each kind.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct HealthReport {
+    pub rows: Vec<HealthRow>,
+    pub counts: Vec<HealthCount>,
+}
+
+/// The app's own update settings (plan M8). Off by default, like every online feature.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct AppUpdateSettings {
+    pub enabled: bool,
+    /// ISO time of the last successful check.
+    pub last_check: Option<String>,
+}
+
+/// A newer version of the app, from the release feed.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct AppUpdate {
+    pub version: String,
+    /// The release notes (Markdown text, shown as plain text).
+    pub notes: Option<String>,
+    /// ISO time of the release.
+    pub date: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -285,6 +372,17 @@ pub enum ErrorCode {
     NotInstallable,
     /// A manual source link is not an http(s) address the app accepts.
     InvalidLink,
+    /// No install was found that "Launch game" can start.
+    NotLaunchable,
+    /// The chosen folder holds neither `gameSettings.xml` nor a `mods` folder.
+    InvalidGameFolder,
+    /// Checking for, downloading or installing an app update failed; `detail` is technical.
+    AppUpdateFailed,
+    /// The old version of a mod went to the Recycle Bin but its verified replacement could not take
+    /// its name; the new file was kept under the hidden name in `detail`, next to where it belongs.
+    ReplaceIncomplete,
+    /// Windows could not say whether the game or its server is running, so nothing was written.
+    RunningUnknown,
     /// Anything unexpected; `detail` holds a technical message for a bug report.
     Internal,
 }

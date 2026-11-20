@@ -95,6 +95,7 @@ fn assert_op_error_clean(e: &OpError) {
         OpError::WriteFailed(d) => OpError::WriteFailed(d.clone()),
         OpError::GameRunning => OpError::GameRunning,
         OpError::ServerRunning => OpError::ServerRunning,
+        OpError::RunningUnknown => OpError::RunningUnknown,
         OpError::SettingsMissing => OpError::SettingsMissing,
         OpError::SettingsUnreadable => OpError::SettingsUnreadable,
         OpError::SettingsChanged => OpError::SettingsChanged,
@@ -598,6 +599,7 @@ fn a_running_game_or_server_is_refused_before_any_change() {
             Running {
                 game: true,
                 server: false,
+                unknown: false,
             },
             true,
         ),
@@ -605,6 +607,7 @@ fn a_running_game_or_server_is_refused_before_any_change() {
             Running {
                 game: false,
                 server: true,
+                unknown: false,
             },
             false,
         ),
@@ -612,6 +615,7 @@ fn a_running_game_or_server_is_refused_before_any_change() {
             Running {
                 game: true,
                 server: true,
+                unknown: false,
             },
             true,
         ),
@@ -629,6 +633,33 @@ fn a_running_game_or_server_is_refused_before_any_change() {
 }
 
 #[test]
+fn a_process_list_that_could_not_be_read_refuses_the_write() {
+    let original = fixture("true", TESTING_DIR);
+    let new = fixture("false", TESTING_DIR);
+    let (tmp, path) = settings_file(&original);
+    let unknown = || Running {
+        unknown: true,
+        ..Running::default()
+    };
+    let e = write_settings(&path, &new, &original, &unknown).unwrap_err();
+    assert!(matches!(e, OpError::RunningUnknown), "{e:?}");
+    assert_eq!(ApiError::from(e).code, ErrorCode::RunningUnknown);
+    assert_eq!(fs::read(&path).unwrap(), original);
+    only_the_settings_file(&tmp);
+    // A known answer still comes first when it is also known to be running.
+    let both = || Running {
+        game: true,
+        server: false,
+        unknown: true,
+    };
+    assert!(matches!(
+        check_not_running(&both),
+        Err(OpError::GameRunning)
+    ));
+    assert!(check_not_running(&|| Running::default()).is_ok());
+}
+
+#[test]
 fn the_game_starting_during_the_write_is_caught_before_the_rename() {
     let original = fixture("true", TESTING_DIR);
     let new = fixture("false", TESTING_DIR);
@@ -638,6 +669,7 @@ fn the_game_starting_during_the_write_is_caught_before_the_rename() {
     let running = || Running {
         game: started.get(),
         server: false,
+        unknown: false,
     };
     let start_game = |_: &Path| started.set(true);
     let hooks = Hooks {
@@ -724,24 +756,49 @@ fn a_read_only_file_fails_cleanly_and_stays_read_only() {
     assert_eq!(names, vec!["gameSettings.xml".to_string()]);
 }
 
+/// A file that is not what was written when it is read back was changed by someone else after the
+/// rename (a settings editor, the game): it is left as it is, never overwritten with the old
+/// bytes. (This test used to expect the original to be put back, which could destroy that edit.)
 #[test]
-fn a_failed_verification_puts_the_original_back() {
+fn a_failed_verification_leaves_what_is_there_and_reports_it() {
     let original = fixture("true", TESTING_DIR);
     let new = fixture("false", TESTING_DIR);
     let (tmp, path) = settings_file(&original);
 
-    let corrupt = |p: &Path| fs::write(p, b"garbage").unwrap();
+    let concurrent_edit = |p: &Path| fs::write(p, b"saved by an editor meanwhile").unwrap();
     let hooks = Hooks {
         before_rename: None,
-        after_rename: Some(&corrupt),
+        after_rename: Some(&concurrent_edit),
     };
     let e = write_settings_with(&path, &new, &original, &idle, &hooks).unwrap_err();
     assert!(
         matches!(&e, OpError::WriteFailed(d) if d == "verify"),
         "{e:?}"
     );
-    assert_eq!(fs::read(&path).unwrap(), original);
+    assert_op_error_clean(&e);
+    assert_eq!(fs::read(&path).unwrap(), b"saved by an editor meanwhile");
     only_the_settings_file(&tmp);
+}
+
+#[test]
+fn a_file_that_cannot_be_read_back_is_not_overwritten_either() {
+    let original = fixture("true", TESTING_DIR);
+    let new = fixture("false", TESTING_DIR);
+    let (tmp, path) = settings_file(&original);
+
+    // Gone between the rename and the verification read.
+    let removed = |p: &Path| fs::remove_file(p).unwrap();
+    let hooks = Hooks {
+        before_rename: None,
+        after_rename: Some(&removed),
+    };
+    let e = write_settings_with(&path, &new, &original, &idle, &hooks).unwrap_err();
+    assert!(
+        matches!(&e, OpError::WriteFailed(d) if d == "verify"),
+        "{e:?}"
+    );
+    assert!(!path.exists(), "nothing was written back");
+    assert!(names_in(tmp.path()).is_empty());
 }
 
 #[test]

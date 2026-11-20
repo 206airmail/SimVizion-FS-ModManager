@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import type { GameStatus } from '../../api';
+import type { GuardedGameStatus } from '../shell/launch';
 import { strings } from '../../strings';
 import { switchBlockedReason } from './blocked';
 
-const idle: GameStatus = {
+const idle: GuardedGameStatus = {
   gameVersion: '1.25.1.0',
   gameRunning: false,
   serverRunning: false,
@@ -11,6 +11,10 @@ const idle: GameStatus = {
   overrideActive: true,
   effectiveModsDir: null,
   loggedDescVersion: 106,
+  store: 'steam',
+  launchable: true,
+  userDirSource: 'detected',
+  userDir: null,
 };
 
 describe('switchBlockedReason', () => {
@@ -25,6 +29,17 @@ describe('switchBlockedReason', () => {
       strings.switching.blockedServer,
     );
     expect(strings.switching.blockedGame).not.toBe(strings.switching.blockedServer);
+  });
+
+  it('blocks, with its own wording, while a launch is waiting for the game to appear', () => {
+    expect(switchBlockedReason({ ...idle, launching: true })).toBe(
+      strings.switching.blockedStarting,
+    );
+    expect(strings.switching.blockedStarting).toContain('is starting');
+    // Once the game is seen running, the running wording takes over.
+    expect(switchBlockedReason({ ...idle, launching: true, gameRunning: true })).toBe(
+      strings.switching.blockedGame,
+    );
   });
 
   it('names the game first when both run', () => {
