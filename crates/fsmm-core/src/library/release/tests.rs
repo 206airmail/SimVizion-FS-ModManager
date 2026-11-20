@@ -25,36 +25,74 @@ fn settings(enabled: bool, last_check: Option<SystemTime>) -> AppUpdateSettings 
 #[test]
 fn nothing_is_due_while_app_updates_are_off_even_when_forced() {
     let now = day(100);
-    assert!(!app_update_due(&settings(false, None), now, false));
-    assert!(!app_update_due(&settings(false, None), now, true));
-    assert!(!app_update_due(&settings(false, Some(day(1))), now, true));
+    assert!(!app_update_due(&settings(false, None), false, now, false));
+    assert!(!app_update_due(&settings(false, None), false, now, true));
+    assert!(!app_update_due(
+        &settings(false, Some(day(1))),
+        true,
+        now,
+        true
+    ));
 }
 
 #[test]
 fn a_forced_check_is_due_even_right_after_one() {
     let now = day(100);
-    assert!(app_update_due(&settings(true, Some(now)), now, true));
+    assert!(app_update_due(&settings(true, Some(now)), false, now, true));
 }
 
 #[test]
 fn a_first_check_is_due() {
-    assert!(app_update_due(&settings(true, None), day(100), false));
+    assert!(app_update_due(
+        &settings(true, None),
+        false,
+        day(100),
+        false
+    ));
 }
 
 #[test]
 fn a_check_is_due_from_24_hours_after_the_last_one() {
     let last = day(100);
     let s = settings(true, Some(last));
-    assert!(!app_update_due(&s, last, false));
+    assert!(!app_update_due(&s, false, last, false));
     assert!(!app_update_due(
         &s,
+        false,
         last + APP_UPDATE_INTERVAL - Duration::from_secs(1),
         false
     ));
-    assert!(app_update_due(&s, last + APP_UPDATE_INTERVAL, false));
+    assert!(app_update_due(&s, false, last + APP_UPDATE_INTERVAL, false));
     assert!(app_update_due(
         &s,
+        false,
         last + APP_UPDATE_INTERVAL + Duration::from_secs(1),
+        false
+    ));
+}
+
+#[test]
+fn a_waiting_update_keeps_the_check_due_within_the_quiet_period() {
+    let last = day(100);
+    let s = settings(true, Some(last));
+    // Within 24 hours of the last check, but an update found earlier is still waiting.
+    assert!(!app_update_due(
+        &s,
+        false,
+        last + Duration::from_secs(60),
+        false
+    ));
+    assert!(app_update_due(
+        &s,
+        true,
+        last + Duration::from_secs(60),
+        false
+    ));
+    // Never while the user has app updates off.
+    assert!(!app_update_due(
+        &settings(false, Some(last)),
+        true,
+        last,
         false
     ));
 }
@@ -62,7 +100,7 @@ fn a_check_is_due_from_24_hours_after_the_last_one() {
 #[test]
 fn a_last_check_in_the_future_is_due() {
     let s = settings(true, Some(day(101)));
-    assert!(app_update_due(&s, day(100), false));
+    assert!(app_update_due(&s, false, day(100), false));
 }
 
 #[test]
@@ -71,7 +109,7 @@ fn an_unreadable_last_check_is_treated_as_never() {
         enabled: true,
         last_check: Some("yesterday-ish".to_string()),
     };
-    assert!(app_update_due(&s, day(100), false));
+    assert!(app_update_due(&s, false, day(100), false));
 }
 
 // ---------------------------------------------------------------- app-update settings
@@ -96,19 +134,98 @@ fn switching_app_updates_on_and_off_is_stored() {
 #[test]
 fn a_noted_check_is_stored_as_iso_time_and_survives_switching() {
     let lib = library();
-    lib.note_app_update_check(day(20_000)).unwrap();
+    lib.note_app_update_check(day(20_000), None, "0.9.0")
+        .unwrap();
     lib.set_app_updates_enabled(true).unwrap();
     let stored = lib.app_update_settings().unwrap();
     assert_eq!(stored.last_check.as_deref(), Some("2024-10-04T00:00:00Z"));
-    assert!(!app_update_due(&stored, day(20_000), false));
-    assert!(app_update_due(&stored, day(20_001), false));
+    assert!(!app_update_due(&stored, false, day(20_000), false));
+    assert!(app_update_due(&stored, false, day(20_001), false));
+}
+
+#[test]
+fn a_found_update_is_remembered_until_a_check_finds_nothing_or_the_app_catches_up() {
+    let lib = library();
+    lib.set_app_updates_enabled(true).unwrap();
+    assert_eq!(lib.app_update_pending("0.9.0").unwrap(), None);
+
+    // A check that finds 1.0.0 stores the time and the version: the next start is due at once.
+    lib.note_app_update_check(day(200), Some("1.0.0"), "0.9.0")
+        .unwrap();
+    let stored = lib.app_update_settings().unwrap();
+    assert_eq!(stored.last_check.as_deref(), Some(iso(day(200)).as_str()));
+    assert_eq!(
+        lib.app_update_pending("0.9.0").unwrap().as_deref(),
+        Some("1.0.0")
+    );
+    assert!(!app_update_due(&stored, false, day(200), false));
+    assert!(app_update_due(&stored, true, day(200), false));
+
+    // A later check shows the time again and finds nothing: nothing is pending any more.
+    lib.note_app_update_check(day(201), None, "0.9.0").unwrap();
+    assert_eq!(lib.app_update_pending("0.9.0").unwrap(), None);
+    assert_eq!(
+        lib.app_update_settings().unwrap().last_check.as_deref(),
+        Some(iso(day(201)).as_str())
+    );
+
+    // A version the app already runs (or an older one) is never pending.
+    lib.note_app_update_check(day(202), Some("0.9.0"), "0.9.0")
+        .unwrap();
+    assert_eq!(lib.app_update_pending("0.9.0").unwrap(), None);
+    lib.note_app_update_check(day(202), Some("v0.9.0-beta.1"), "0.9.0-beta.1")
+        .unwrap();
+    assert_eq!(lib.app_update_pending("0.9.0-beta.1").unwrap(), None);
+    // A release after a pre-release is a different version, so it is kept.
+    lib.note_app_update_check(day(202), Some("0.9.0"), "0.9.0-beta.1")
+        .unwrap();
+    assert_eq!(
+        lib.app_update_pending("0.9.0-beta.1").unwrap().as_deref(),
+        Some("0.9.0")
+    );
+
+    // Installing it (the app now runs 1.0.0) forgets a stored one.
+    lib.note_app_update_check(day(203), Some("1.0.0"), "0.9.0")
+        .unwrap();
+    assert_eq!(lib.app_update_pending("1.0.0").unwrap(), None);
+    assert_eq!(lib.app_update_pending("0.9.0").unwrap(), None);
+}
+
+#[test]
+fn switching_app_updates_off_forgets_the_pending_update() {
+    let lib = library();
+    lib.set_app_updates_enabled(true).unwrap();
+    lib.note_app_update_check(day(200), Some("1.0.0"), "0.9.0")
+        .unwrap();
+    assert!(lib.app_update_pending("0.9.0").unwrap().is_some());
+    lib.set_app_updates_enabled(false).unwrap();
+    assert_eq!(lib.app_update_pending("0.9.0").unwrap(), None);
+    // Switching them on again does not bring it back; the next check finds it afresh.
+    lib.set_app_updates_enabled(true).unwrap();
+    assert_eq!(lib.app_update_pending("0.9.0").unwrap(), None);
+}
+
+#[test]
+fn the_app_update_holds_keep_file_operations_out_and_know_when_one_runs() {
+    let lib = library();
+    assert!(!lib.operation_running());
+    {
+        let _hold = lib.begin_app_update().unwrap();
+        assert!(lib.operation_running() && lib.file_operation_running());
+        assert_eq!(
+            lib.begin_app_update().err().map(|e| e.code),
+            Some(ErrorCode::Busy)
+        );
+    }
+    assert!(!lib.operation_running());
+    assert!(lib.begin_app_update().is_ok());
 }
 
 #[test]
 fn app_update_settings_do_not_touch_the_mod_update_settings() {
     let lib = library();
     lib.set_app_updates_enabled(true).unwrap();
-    lib.note_app_update_check(day(5)).unwrap();
+    lib.note_app_update_check(day(5), None, "0.9.0").unwrap();
     let mods = lib.update_settings().unwrap();
     assert!(!mods.enabled);
     assert_eq!(mods.last_check, None);

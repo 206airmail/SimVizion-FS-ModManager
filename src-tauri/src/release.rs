@@ -117,26 +117,42 @@ pub async fn get_app_update_settings(
     blocking(move || library.app_update_settings()).await
 }
 
+/// Switching app updates off also drops the update that was found: nothing may be offered or
+/// installed while the user has them off.
 #[tauri::command]
 pub async fn set_app_updates_enabled(
     state: State<'_, AppState>,
     enabled: bool,
 ) -> Result<AppUpdateSettings, ApiError> {
     let library = state.library.clone();
-    blocking(move || library.set_app_updates_enabled(enabled)).await
+    let settings = blocking(move || library.set_app_updates_enabled(enabled)).await?;
+    if !settings.enabled {
+        forget_pending();
+    }
+    Ok(settings)
 }
 
 /// The update the last check found, kept for `install_app_update` so the frontend never names
 /// what to install.
 static PENDING: Mutex<Option<Update>> = Mutex::new(None);
 
+fn forget_pending() {
+    if let Ok(mut pending) = PENDING.lock() {
+        *pending = None;
+    }
+}
+
+/// The version this build is, which a found update is compared with by name.
+const RUNNING_VERSION: &str = env!("CARGO_PKG_VERSION");
+
 fn update_failed(e: impl std::fmt::Display) -> ApiError {
     ApiError::new(ErrorCode::AppUpdateFailed, Some(e.to_string()))
 }
 
 /// A newer app version from the release feed (`plugins.updater.endpoints` in
-/// `tauri.conf.json`), or `None`. Refused with `UpdatesDisabled` while app updates are off;
-/// without `force`, nothing is asked within 24 hours of the last check that found no update.
+/// `tauri.conf.json`), or `None`. Refused with `UpdatesDisabled` while app updates are off.
+/// Without `force`, nothing is asked within 24 hours of the last successful check, unless an
+/// update it found has not been installed yet: that one is offered again at every start.
 #[tauri::command]
 pub async fn check_app_update(
     app: AppHandle,
@@ -151,7 +167,13 @@ pub async fn check_app_update(
     if !settings.enabled {
         return Err(ApiError::new(ErrorCode::UpdatesDisabled, None));
     }
-    if !app_update_due(&settings, SystemTime::now(), force) {
+    let waiting = {
+        let library = library.clone();
+        blocking(move || library.app_update_pending(RUNNING_VERSION))
+            .await?
+            .is_some()
+    };
+    if !app_update_due(&settings, waiting, SystemTime::now(), force) {
         return Ok(None);
     }
     let found = app
@@ -160,11 +182,26 @@ pub async fn check_app_update(
         .check()
         .await
         .map_err(update_failed)?;
-    // Only "up to date" starts the 24-hour quiet period: an update found but not installed yet
-    // is offered again at the next start.
-    if found.is_none() {
-        blocking(move || library.note_app_update_check(SystemTime::now())).await?;
+    // The user may have switched app updates off while the request was out: its answer is
+    // dropped, not stored and not offered.
+    let still_enabled = {
+        let library = library.clone();
+        blocking(move || library.app_update_settings())
+            .await?
+            .enabled
+    };
+    if !still_enabled {
+        forget_pending();
+        return Err(ApiError::new(ErrorCode::UpdatesDisabled, None));
     }
+    // The time of every successful check is kept (for display and the 24-hour rule); the version
+    // it found is kept too, so an update that is not installed yet is asked about again at the
+    // next start instead of waiting a day.
+    let version = found.as_ref().map(|update| update.version.clone());
+    blocking(move || {
+        library.note_app_update_check(SystemTime::now(), version.as_deref(), RUNNING_VERSION)
+    })
+    .await?;
     let answer = found.as_ref().map(|update| AppUpdate {
         version: update.version.clone(),
         notes: update.body.clone(),
@@ -179,11 +216,29 @@ pub async fn check_app_update(
 /// Downloads the update the last check found, verifies its signature against the public key in
 /// `tauri.conf.json`, and runs its installer (passive); on Windows the plugin exits the app and
 /// the installer starts the new version. Progress is reported in bytes.
+///
+/// Refused with `UpdatesDisabled` while app updates are off, and with `Busy` while a file
+/// operation, a mod update or a mod-update check is running: the app exits as the installer
+/// starts, which would cut them off half way. While the download runs those operations cannot
+/// start either.
 #[tauri::command]
 pub async fn install_app_update(
     app: AppHandle,
+    state: State<'_, AppState>,
     on_progress: Channel<OpProgress>,
 ) -> Result<(), ApiError> {
+    let library = state.library.clone();
+    let enabled = {
+        let library = library.clone();
+        blocking(move || library.app_update_settings())
+            .await?
+            .enabled
+    };
+    if !enabled {
+        forget_pending();
+        return Err(ApiError::new(ErrorCode::UpdatesDisabled, None));
+    }
+    let _hold = library.begin_app_update()?;
     let update = PENDING
         .lock()
         .ok()

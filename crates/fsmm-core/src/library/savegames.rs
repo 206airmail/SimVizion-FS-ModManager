@@ -41,7 +41,7 @@ const PROGRESS_INTERVAL: Duration = Duration::from_millis(50);
 /// The busy and cancel flags of savegame hashing.
 #[derive(Default)]
 pub(super) struct HashState {
-    busy: AtomicBool,
+    pub(super) busy: AtomicBool,
     cancel: AtomicBool,
     #[cfg(test)]
     hooks: Mutex<tests::Hooks>,

@@ -10,6 +10,7 @@ use tauri::ipc::Channel;
 use tauri::State;
 
 use crate::commands::{blocking, context};
+use crate::switching::writes_allowed;
 use crate::AppState;
 
 fn running() -> Running {
@@ -55,6 +56,7 @@ pub async fn execute_transfer(
 ) -> Result<OpResult, ApiError> {
     let library = state.library.clone();
     blocking(move || {
+        writes_allowed()?;
         library.execute_transfer(&plan_id, &choices, &context(), &env(), &|progress| {
             let _ = on_progress.send(progress);
         })
@@ -71,6 +73,7 @@ pub async fn remove_mods(
 ) -> Result<OpResult, ApiError> {
     let library = state.library.clone();
     blocking(move || {
+        writes_allowed()?;
         library.remove_mods(&profile_id, &mod_ids, &context(), &env(), &|progress| {
             let _ = on_progress.send(progress);
         })
