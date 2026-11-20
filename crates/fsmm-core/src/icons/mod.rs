@@ -20,8 +20,8 @@ const PNG_SIGNATURE: [u8; 8] = [0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A];
 pub const THUMBNAIL_EDGE: u32 = 256;
 /// Largest width or height accepted from an icon header.
 pub const MAX_DIMENSION: u32 = 8192;
-/// Largest `width * height` decoded (64 MiB of RGBA). Real icons are at most 1024×1024.
-pub const MAX_PIXELS: u64 = 4096 * 4096;
+/// Largest `width * height` decoded (16 MiB of RGBA). Real icons are at most 1024×1024.
+pub const MAX_PIXELS: u64 = 2048 * 2048;
 
 /// Rejects images whose decoded size would exceed [`MAX_PIXELS`].
 fn check_pixel_budget(width: u32, height: u32) -> Result<(), IconError> {
@@ -145,10 +145,10 @@ mod tests {
 
     #[test]
     fn pixel_budget_caps_decoded_size_below_the_dimension_cap() {
-        assert!(check_pixel_budget(4096, 4096).is_ok());
+        assert!(check_pixel_budget(2048, 2048).is_ok());
         assert!(check_pixel_budget(8192, 1).is_ok());
         assert!(matches!(
-            check_pixel_budget(4097, 4096),
+            check_pixel_budget(2049, 2048),
             Err(IconError::Malformed(_))
         ));
         // Each edge is within MAX_DIMENSION, but the area is over budget.

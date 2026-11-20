@@ -104,14 +104,12 @@ impl Library {
         })
     }
 
-    /// The user folder the user chose with "Choose game folder", if any. It overrides detection.
-    /// Only while it is still a valid game folder; otherwise `None`, so detection decides again.
+    /// The user folder the user chose with "Choose game folder", if any. It overrides detection,
+    /// and it stays the choice while the folder is unavailable (a disconnected drive): it is
+    /// validated when it is set, not when it is read, so a write never silently goes to the
+    /// detected folder's `gameSettings.xml` instead of the one the user picked.
     pub fn chosen_game_folder(&self) -> Result<Option<PathBuf>, ApiError> {
-        Ok(self
-            .store
-            .app_setting(KEY_GAME_DIR)?
-            .map(PathBuf::from)
-            .filter(|dir| valid_game_folder(dir)))
+        Ok(self.store.app_setting(KEY_GAME_DIR)?.map(PathBuf::from))
     }
 
     /// Stores (`Some`) or forgets (`None`) the chosen user folder. `InvalidGameFolder` unless

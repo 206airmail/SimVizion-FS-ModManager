@@ -170,8 +170,11 @@ fn clearing_forgets_the_chosen_folder() {
     lib.set_chosen_game_folder(None).unwrap();
 }
 
+/// The choice is validated when it is made, not when it is read: a folder that is unavailable
+/// right now (a disconnected drive) is still the user's choice, so no write goes to the detected
+/// folder instead. (This test used to expect `None`, which made that happen silently.)
 #[test]
-fn a_chosen_folder_that_stopped_being_valid_is_not_returned() {
+fn a_chosen_folder_that_became_unavailable_is_still_the_choice() {
     let root = tempfile::tempdir().unwrap();
     let dir = folder(root.path(), "a");
     fs::create_dir_all(dir.join("mods")).unwrap();
@@ -179,11 +182,16 @@ fn a_chosen_folder_that_stopped_being_valid_is_not_returned() {
     lib.set_chosen_game_folder(Some(&dir)).unwrap();
 
     fs::remove_dir(dir.join("mods")).unwrap();
-    assert_eq!(lib.chosen_game_folder().unwrap(), None);
-    // It is valid again once the mods folder is back.
-    fs::create_dir_all(dir.join("mods")).unwrap();
     assert_eq!(lib.chosen_game_folder().unwrap(), Some(dir.clone()));
     fs::remove_dir_all(&dir).unwrap();
+    assert_eq!(lib.chosen_game_folder().unwrap(), Some(dir.clone()));
+    // Setting one still validates, and forgetting it is the only way back to detection.
+    assert_eq!(
+        lib.set_chosen_game_folder(Some(&dir)).unwrap_err().code,
+        ErrorCode::InvalidGameFolder
+    );
+    assert_eq!(lib.chosen_game_folder().unwrap(), Some(dir));
+    lib.set_chosen_game_folder(None).unwrap();
     assert_eq!(lib.chosen_game_folder().unwrap(), None);
 }
 
