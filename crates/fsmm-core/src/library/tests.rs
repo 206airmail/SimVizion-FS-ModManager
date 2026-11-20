@@ -706,6 +706,46 @@ fn thumbnail_errors() {
 }
 
 #[test]
+fn a_decoder_that_panics_gives_no_thumbnail_instead_of_unwinding() {
+    let err = guard_decoder::<()>(|| panic!("a decoder bug")).unwrap_err();
+    assert_eq!(err.code, ErrorCode::Internal);
+    assert_eq!(err.detail.as_deref(), Some(DECODER_PANIC));
+    // An ordinary error and a result pass through as before.
+    let err = guard_decoder::<()>(|| Err(icons::IconError::Encode("x".into()))).unwrap_err();
+    assert_eq!(err.code, ErrorCode::Internal);
+    assert_eq!(guard_decoder(|| Ok(5)).unwrap(), 5);
+}
+
+#[test]
+fn a_crafted_palette_png_icon_is_an_error_not_a_crash() {
+    // 1x1, colour type 3 and a 4-byte PLTE: the `png` crate panics on it.
+    let mut crafted = Vec::new();
+    {
+        let mut encoder = ::png::Encoder::new(&mut crafted, 1, 1);
+        encoder.set_color(::png::ColorType::Indexed);
+        encoder.set_depth(::png::BitDepth::Eight);
+        encoder.set_palette(vec![1, 2, 3, 4]);
+        let mut writer = encoder.write_header().unwrap();
+        writer.write_image_data(&[0]).unwrap();
+        writer.finish().unwrap();
+    }
+    let dir = tempfile::tempdir().unwrap();
+    write_zip(
+        &dir.path().join("FS25_Crafted.zip"),
+        &[
+            ("modDesc.xml", desc("Crafted", Some("icon.png")).as_bytes()),
+            ("icon.png", &crafted),
+        ],
+        Method::Stored,
+    );
+    let lib = library();
+    let id = add(&lib, dir.path()).id;
+    list(&lib, &id);
+    let err = lib.thumbnail(&id, "FS25_Crafted.zip").unwrap_err();
+    assert_eq!(err.code, ErrorCode::Internal);
+}
+
+#[test]
 fn a_thumbnail_for_a_file_that_vanished_is_folder_missing() {
     let dir = tempfile::tempdir().unwrap();
     let path = write_mod_with_icon(dir.path(), "FS25_A.zip", "A");

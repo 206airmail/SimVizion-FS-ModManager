@@ -96,8 +96,13 @@ impl Env {
         self.lib.undo_switch(op_id, &self.ctx, &idle, &self.backups)
     }
 
+    /// Where the backups of this fixture's settings file are kept.
+    fn backup_dir(&self) -> PathBuf {
+        backups_for(&self.backups, &self.settings)
+    }
+
     fn backup_names(&self) -> Vec<String> {
-        let Ok(entries) = fs::read_dir(&self.backups) else {
+        let Ok(entries) = fs::read_dir(self.backup_dir()) else {
             return Vec::new();
         };
         let mut names: Vec<String> = entries
@@ -164,7 +169,10 @@ fn switching_to_the_default_sets_active_false_and_keeps_the_directory() {
     // The backup is the file as it was, and the journal knows it.
     let backups = env.backup_names();
     assert_eq!(backups.len(), 1);
-    assert_eq!(fs::read(env.backups.join(&backups[0])).unwrap(), original);
+    assert_eq!(
+        fs::read(env.backup_dir().join(&backups[0])).unwrap(),
+        original
+    );
     let journal = env.journal();
     assert_eq!(journal.len(), 1);
     assert_eq!(journal[0].id, "o1");
@@ -310,6 +318,7 @@ fn a_running_game_or_server_leaves_no_backup_no_temp_file_and_no_change() {
             Running {
                 game: true,
                 server: false,
+                unknown: false,
             },
             ErrorCode::GameRunning,
         ),
@@ -317,6 +326,7 @@ fn a_running_game_or_server_leaves_no_backup_no_temp_file_and_no_change() {
             Running {
                 game: false,
                 server: true,
+                unknown: false,
             },
             ErrorCode::ServerRunning,
         ),
@@ -383,6 +393,7 @@ fn the_game_starting_mid_write_leaves_the_original() {
         Running {
             game: calls.get() >= 2,
             server: false,
+            unknown: false,
         }
     };
     let result = env
@@ -522,7 +533,7 @@ fn restore_backs_up_the_broken_file_then_restores_the_newest_backup() {
     // The broken file was backed up first.
     let after = env.backup_names();
     assert_eq!(after.len(), 2);
-    assert_eq!(fs::read(env.backups.join(&after[1])).unwrap(), broken);
+    assert_eq!(fs::read(env.backup_dir().join(&after[1])).unwrap(), broken);
     let journal = env.journal();
     assert_eq!(journal.last().unwrap().kind, "restore");
     assert_eq!(journal.last().unwrap().result, "ok");
@@ -585,9 +596,9 @@ fn restore_refuses_a_concurrent_change() {
 #[test]
 fn latest_backup_reports_the_newest_time() {
     let env = Env::new();
-    assert!(env.lib.latest_backup(&env.backups).is_none());
+    assert!(env.lib.latest_backup(&env.ctx, &env.backups).is_none());
     env.set(&env.other).unwrap();
-    let time = env.lib.latest_backup(&env.backups).unwrap();
+    let time = env.lib.latest_backup(&env.ctx, &env.backups).unwrap();
     let age = SystemTime::now()
         .duration_since(time)
         .unwrap_or_default()
@@ -605,7 +616,7 @@ fn backups_are_kept_to_the_newest_twenty_across_many_switches() {
     assert_eq!(env.backup_names().len(), KEEP_BACKUPS);
     assert_eq!(env.journal().len(), 25);
     // The newest backup is the state before the last switch.
-    let last = env.lib.latest_backup(&env.backups);
+    let last = env.lib.latest_backup(&env.ctx, &env.backups);
     assert!(last.is_some());
 }
 
@@ -631,9 +642,179 @@ fn journal_rows_carry_ids_states_and_backup_names() {
     assert_eq!(journal[1].to.directory, Some(PathBuf::from(&env.other_dir)));
     assert!(!journal[1].to.active);
     for op in &journal {
-        assert!(env.backups.join(op.backup_file.as_ref().unwrap()).is_file());
+        assert!(env
+            .backup_dir()
+            .join(op.backup_file.as_ref().unwrap())
+            .is_file());
         assert!(op.at > 0);
     }
+}
+
+// ---------------------------------------------------------------- one settings file at a time
+
+/// A second game folder with its own settings file, registered with the same library.
+fn second_folder(env: &Env) -> (PathBuf, GameContext) {
+    let user = env._tmp.path().join("user2");
+    let default_dir = user.join("mods");
+    fs::create_dir_all(&default_dir).unwrap();
+    let settings = user.join("gameSettings.xml");
+    fs::write(&settings, fixture("true", &env.other_dir)).unwrap();
+    let ctx = GameContext {
+        user_dir: Some(user),
+        effective_mods_dir: Some(PathBuf::from(&env.other_dir)),
+        default_mods_dir: Some(default_dir),
+        languages: vec!["en".to_string()],
+        ..GameContext::default()
+    };
+    (settings, ctx)
+}
+
+#[test]
+fn backups_are_kept_per_settings_file_in_a_folder_named_by_a_stable_hash() {
+    let env = Env::new();
+    // The name is 16 hex digits, the same every run (a fixed hash of the lower-cased path).
+    let dir = env.backup_dir();
+    let name = dir.file_name().unwrap().to_str().unwrap().to_string();
+    assert_eq!(name.len(), 16);
+    assert!(name.bytes().all(|b| b.is_ascii_hexdigit()));
+    assert_eq!(stable_hash(""), 0xcbf2_9ce4_8422_2325);
+    assert_eq!(stable_hash("a"), 0xaf63_dc4c_8601_ec8c);
+    assert_eq!(
+        backups_for(
+            &env.backups,
+            Path::new(&env.settings.to_string_lossy().to_uppercase())
+        ),
+        dir,
+        "the key ignores case"
+    );
+
+    env.set(&env.other).unwrap();
+    assert_eq!(env.backup_names().len(), 1);
+    // Nothing is loose in the backups folder itself.
+    let loose: Vec<_> = fs::read_dir(&env.backups)
+        .unwrap()
+        .map(|e| e.unwrap().path())
+        .filter(|p| p.is_file())
+        .collect();
+    assert!(loose.is_empty());
+}
+
+#[test]
+fn a_restore_in_another_game_folder_never_uses_this_folders_backups() {
+    let env = Env::new();
+    let original = env.bytes();
+    env.set(&env.other).unwrap();
+    assert!(env.lib.latest_backup(&env.ctx, &env.backups).is_some());
+
+    // The user chooses another game folder; it has no backup of its own yet.
+    let (settings_b, ctx_b) = second_folder(&env);
+    let before_b = fs::read(&settings_b).unwrap();
+    assert!(env.lib.latest_backup(&ctx_b, &env.backups).is_none());
+    assert_eq!(
+        err_code(env.lib.restore_backup(&ctx_b, &idle, &env.backups)),
+        ErrorCode::NoBackup
+    );
+    assert_eq!(
+        fs::read(&settings_b).unwrap(),
+        before_b,
+        "B was not touched"
+    );
+    assert!(
+        !before_b.is_empty() && before_b != original,
+        "the two files really differ"
+    );
+
+    // Once B has a backup of its own, a restore there uses that one, and A's file is left alone.
+    let a_now = env.bytes();
+    env.lib
+        .set_active(&env.default, &ctx_b, &idle, &env.backups)
+        .unwrap();
+    env.lib.restore_backup(&ctx_b, &idle, &env.backups).unwrap();
+    assert_eq!(fs::read(&settings_b).unwrap(), before_b);
+    assert_eq!(env.bytes(), a_now);
+}
+
+#[test]
+fn a_loose_backup_from_before_is_never_restored_automatically() {
+    let env = Env::new();
+    // A backup as the earlier version kept them: loose in the backups folder.
+    fs::create_dir_all(&env.backups).unwrap();
+    let legacy = fixture("true", r"D:\legacy\folder");
+    ops::backup(&legacy, &env.backups, KEEP_BACKUPS).unwrap();
+    assert!(env.lib.latest_backup(&env.ctx, &env.backups).is_none());
+    let before = env.bytes();
+    assert_eq!(
+        err_code(env.lib.restore_backup(&env.ctx, &idle, &env.backups)),
+        ErrorCode::NoBackup
+    );
+    assert_eq!(env.bytes(), before);
+    // New backups do not prune it either.
+    env.set(&env.other).unwrap();
+    let loose = fs::read_dir(&env.backups)
+        .unwrap()
+        .filter(|e| e.as_ref().unwrap().path().is_file())
+        .count();
+    assert_eq!(loose, 1);
+}
+
+#[test]
+fn undo_only_applies_to_the_settings_file_it_was_recorded_for() {
+    let env = Env::new();
+    let first = env.set(&env.other).unwrap();
+    // The same library now works on another game folder's file.
+    let (settings_b, ctx_b) = second_folder(&env);
+    let before_b = fs::read(&settings_b).unwrap();
+    assert_eq!(
+        err_code(
+            env.lib
+                .undo_switch(&first.op_id, &ctx_b, &idle, &env.backups)
+        ),
+        ErrorCode::NothingToUndo
+    );
+    assert_eq!(fs::read(&settings_b).unwrap(), before_b);
+    // Back on the original file it still works.
+    env.undo(&first.op_id).unwrap();
+
+    // A write to B is undoable in B and not in A.
+    let in_b = env
+        .lib
+        .set_active(&env.default, &ctx_b, &idle, &env.backups)
+        .unwrap();
+    assert_eq!(
+        err_code(env.undo(&in_b.op_id)),
+        ErrorCode::NothingToUndo,
+        "A's file is not B's"
+    );
+    env.lib
+        .undo_switch(&in_b.op_id, &ctx_b, &idle, &env.backups)
+        .unwrap();
+    assert_eq!(fs::read(&settings_b).unwrap(), before_b);
+}
+
+#[test]
+fn a_journal_row_without_a_settings_file_is_not_undoable() {
+    let env = Env::new();
+    env.set(&env.other).unwrap();
+    // The row as the earlier version journaled it: no settings key.
+    let legacy = env
+        .lib
+        .store
+        .add_op(&NewOp {
+            kind: "switch",
+            from: &ModsOverride {
+                active: true,
+                directory: Some(PathBuf::from(&env.testing_dir)),
+            },
+            to: &env.override_now(),
+            backup_file: None,
+            result: "ok",
+            settings_key: None,
+        })
+        .unwrap();
+    assert_eq!(err_code(env.undo(&legacy)), ErrorCode::NothingToUndo);
+    // The row also does not make "already active" offer an Undo.
+    let again = env.set(&env.other).unwrap();
+    assert_eq!(again.op_id, "");
 }
 
 // ---------------------------------------------------------------- secrets
@@ -659,6 +840,7 @@ fn no_error_text_contains_file_contents() {
                 &|| Running {
                     game: true,
                     server: false,
+                    unknown: false,
                 },
                 &env2.backups,
             )

@@ -163,6 +163,18 @@ pub(super) fn github_repo_of(url: &str, allow_http: bool) -> Option<(String, Str
     (valid(owner) && valid(repo)).then(|| (owner.to_string(), repo.to_string()))
 }
 
+/// `(owner, repo)` of a release asset URL, `https://github.com/<owner>/<repo>/releases/download/
+/// <tag>/<file>`; `None` for any other path on `github.com` (an archive, a raw file, the
+/// repository page) or any other host.
+pub(super) fn github_release_repo_of(url: &str) -> Option<(String, String)> {
+    let (owner, repo) = github_repo_of(url, false)?;
+    let parts = split(url, false)?;
+    let mut segments = parts.path.split('/').filter(|s| !s.is_empty()).skip(2);
+    let is_release = segments.next() == Some("releases") && segments.next() == Some("download");
+    // A tag and a file name must follow.
+    (is_release && segments.next().is_some() && segments.next().is_some()).then_some((owner, repo))
+}
+
 /// The file name in the last path segment of a URL, percent-decoded; `None` when it has none
 /// or is not valid UTF-8.
 pub(crate) fn download_file_name(url: &str) -> Option<String> {
@@ -318,6 +330,10 @@ fn attribute(tag: &str, name: &str) -> Option<String> {
             i += 1;
         }
         if bytes.get(i) != Some(&b'=') {
+            // A stray `>` (the tag's own end) is neither a name nor skipped above: step over it.
+            if i == name_start {
+                i += 1;
+            }
             continue;
         }
         i += 1;

@@ -2,6 +2,12 @@
 //! itself is `crate::ops`; this layer resolves profiles, journals each write in
 //! `library.sqlite` and returns what the frontend shows.
 //!
+//! Backups and Undo belong to one `gameSettings.xml`: backups live in a folder of their own per
+//! settings file (`<backups>/<16 hex digits of a stable hash of the file's path key>/`), and each
+//! journal row records the file's path key. A restore reads only the current file's folder; an
+//! Undo only applies to the file it was recorded for. Backups made before this, loose in the
+//! backups folder, stay where they are and are never restored automatically.
+//!
 //! Journal: every successful write, and every failed attempt that got as far as taking a
 //! backup, is one row in `ops`. A failed journal insert after a successful write is not an
 //! error for the caller (the file did change); the result then carries an empty `op_id`, so
@@ -32,6 +38,24 @@ fn settings_path(ctx: &GameContext) -> Result<PathBuf, ApiError> {
         .filter(|p| p.is_file())
         .ok_or_else(|| ApiError::from(OpError::SettingsMissing))?;
     Ok(path)
+}
+
+/// `<user folder>\gameSettings.xml` whether or not it exists; `None` without a user folder.
+fn settings_candidate(ctx: &GameContext) -> Option<PathBuf> {
+    ctx.user_dir.as_ref().map(|dir| dir.join(SETTINGS_FILE))
+}
+
+/// FNV-1a, 64 bit: a hash that is the same on every run and every build (the standard
+/// library's hashers are not promised to be).
+fn stable_hash(text: &str) -> u64 {
+    text.bytes().fold(0xcbf2_9ce4_8422_2325, |hash, byte| {
+        (hash ^ u64::from(byte)).wrapping_mul(0x0000_0100_0000_01b3)
+    })
+}
+
+/// The folder holding the backups of one settings file.
+pub(super) fn backups_for(backups_dir: &Path, settings: &Path) -> PathBuf {
+    backups_dir.join(format!("{:016x}", stable_hash(&path_key(settings))))
 }
 
 /// Reads the file; only the io error kind is kept if that fails.
@@ -115,7 +139,7 @@ impl Library {
         let patched = ops::patch_override(&original, &target)?;
         if patched == original {
             return Ok(SwitchResult {
-                op_id: self.latest_ok_op_id(),
+                op_id: self.latest_ok_op_id(&settings),
                 to_profile_id: from_profile_id.clone(),
                 from_profile_id,
             });
@@ -152,6 +176,11 @@ impl Library {
             .ok_or_else(nothing)?;
 
         let settings = settings_path(ctx)?;
+        // Only for the file it was recorded for; a row from before that was recorded cannot be
+        // undone, because it cannot be said which file it changed.
+        if op.settings_key.as_deref() != Some(path_key(&settings).as_str()) {
+            return Err(nothing());
+        }
         ops::check_not_running(running)?;
         let original = read_settings(&settings)?;
         let current = ops::read_override(&original)?;
@@ -164,7 +193,7 @@ impl Library {
         let patched = ops::patch_override(&original, &op.from)?;
         if patched == original {
             return Ok(SwitchResult {
-                op_id: self.latest_ok_op_id(),
+                op_id: self.latest_ok_op_id(&settings),
                 to_profile_id: from_profile_id.clone(),
                 from_profile_id,
             });
@@ -184,12 +213,16 @@ impl Library {
         })
     }
 
-    /// Time of the newest `gameSettings.xml` backup, if any.
-    pub fn latest_backup(&self, backups_dir: &Path) -> Option<SystemTime> {
-        ops::latest_backup(backups_dir).map(|(_, time)| time)
+    /// Time of the newest backup of the current `gameSettings.xml`, if any. Backups of other
+    /// settings files (another game folder) and loose ones from before backups were kept per
+    /// file are not counted.
+    pub fn latest_backup(&self, ctx: &GameContext, backups_dir: &Path) -> Option<SystemTime> {
+        let dir = backups_for(backups_dir, &settings_candidate(ctx)?);
+        ops::latest_backup(&dir).map(|(_, time)| time)
     }
 
-    /// Replaces `gameSettings.xml` with the newest backup, backing up the current file first.
+    /// Replaces `gameSettings.xml` with the newest backup of that same file, backing up the
+    /// current file first. `NoBackup` when there is none for it, whatever other folders have.
     pub fn restore_backup(
         &self,
         ctx: &GameContext,
@@ -197,8 +230,10 @@ impl Library {
         backups_dir: &Path,
     ) -> Result<(), ApiError> {
         ops::check_not_running(running)?;
+        let candidate = settings_candidate(ctx).ok_or(OpError::SettingsMissing)?;
+        let backups_dir = backups_for(backups_dir, &candidate);
         // The source is chosen before the safety backup, which would otherwise be the newest.
-        let (source, _) = ops::latest_backup(backups_dir).ok_or(OpError::NoBackup)?;
+        let (source, _) = ops::latest_backup(&backups_dir).ok_or(OpError::NoBackup)?;
         let settings = settings_path(ctx)?;
         let restored = fs::read(&source)
             .map_err(|e| ApiError::new(ErrorCode::WriteFailed, Some(format!("{:?}", e.kind()))))?;
@@ -207,15 +242,16 @@ impl Library {
         // Whatever the current file holds, it is kept first; it may be what needs rescuing.
         let from = ops::read_override(&current).unwrap_or_default();
         let to = ops::read_override(&restored).unwrap_or_default();
-        let backup_file = ops::backup(&current, backups_dir, KEEP_BACKUPS)?;
+        let backup_file = ops::backup(&current, &backups_dir, KEEP_BACKUPS)?;
         match ops::write_settings(&settings, &restored, &current, running) {
             Ok(()) => {
-                self.journal(KIND_RESTORE, &from, &to, &backup_file, "ok");
+                self.journal(KIND_RESTORE, &settings, &from, &to, &backup_file, "ok");
                 Ok(())
             }
             Err(e) => {
                 let e = ApiError::from(e);
-                self.journal(KIND_RESTORE, &from, &to, &backup_file, &code_name(e.code));
+                let result = code_name(e.code);
+                self.journal(KIND_RESTORE, &settings, &from, &to, &backup_file, &result);
                 Err(e)
             }
         }
@@ -234,25 +270,27 @@ impl Library {
     ) -> Result<(String, ModsOverride), ApiError> {
         let from = ops::read_override(original)?;
         let to = ops::read_override(patched)?;
-        let backup_file = ops::backup(original, backups_dir, KEEP_BACKUPS)?;
+        let backup_file = ops::backup(original, &backups_for(backups_dir, settings), KEEP_BACKUPS)?;
         match ops::write_settings(settings, patched, original, running) {
             Ok(()) => {
-                let id = self.journal(kind, &from, &to, &backup_file, "ok");
+                let id = self.journal(kind, settings, &from, &to, &backup_file, "ok");
                 Ok((id, to))
             }
             Err(e) => {
                 let e = ApiError::from(e);
-                self.journal(kind, &from, &to, &backup_file, &code_name(e.code));
+                let result = code_name(e.code);
+                self.journal(kind, settings, &from, &to, &backup_file, &result);
                 Err(e)
             }
         }
     }
 
-    /// Appends a journal row. A journal failure never hides the outcome of the write, so it
-    /// yields an empty id instead of an error.
+    /// Appends a journal row for a write to `settings`. A journal failure never hides the outcome
+    /// of the write, so it yields an empty id instead of an error.
     fn journal(
         &self,
         kind: &str,
+        settings: &Path,
         from: &ModsOverride,
         to: &ModsOverride,
         backup_file: &str,
@@ -265,16 +303,19 @@ impl Library {
                 to,
                 backup_file: Some(backup_file),
                 result,
+                settings_key: Some(&path_key(settings)),
             })
             .unwrap_or_default()
     }
 
-    /// The id of the newest journaled write that succeeded, or empty.
-    fn latest_ok_op_id(&self) -> String {
+    /// The id of the newest journaled write that succeeded, if it was to this settings file;
+    /// else empty (no Undo is offered).
+    fn latest_ok_op_id(&self, settings: &Path) -> String {
         self.store
             .latest_ok_op()
             .ok()
             .flatten()
+            .filter(|op| op.settings_key.as_deref() == Some(path_key(settings).as_str()))
             .map(|op| op.id)
             .unwrap_or_default()
     }

@@ -110,6 +110,8 @@ pub enum NetError {
     NotAllowed,
     /// The caller's cancel flag was set.
     Cancelled,
+    /// A download is larger than the caller allowed (said so, or went past it).
+    TooLarge,
 }
 
 impl fmt::Display for NetError {
@@ -141,10 +143,13 @@ pub trait Web: Send + Sync {
     /// and checking `cancel` between chunks. Returns the bytes written. `referer` is the
     /// [`allowed_page_url`] the link was found on, sent as `Referer` (ModHub's CDN serves a
     /// file only to its mod page, as a click on DOWNLOAD there would); any other is refused.
+    /// A download that is, or turns out to be, larger than `max_bytes` stops with
+    /// [`NetError::TooLarge`] before the chunk that crosses it is written.
     fn download(
         &self,
         url: &str,
         referer: Option<&str>,
+        max_bytes: u64,
         sink: &mut dyn Write,
         progress: &mut dyn FnMut(u64),
         cancel: &AtomicBool,
@@ -250,6 +255,13 @@ pub fn modhub_id(page_url: &str) -> Option<String> {
 /// `(owner, repo)` of a `https://github.com/<owner>/<repo>[/...]` URL.
 pub fn github_repo(url: &str) -> Option<(String, String)> {
     url::github_repo_of(url, false)
+}
+
+/// `(owner, repo)` of a GitHub release asset URL
+/// (`https://github.com/<owner>/<repo>/releases/download/<tag>/<file>`); `None` for any other
+/// address, including other paths on `github.com`.
+pub fn github_release_repo(url: &str) -> Option<(String, String)> {
+    url::github_release_repo_of(url)
 }
 
 /// Like [`github_repo`], for a link the user pasted, which may be `http`.

@@ -39,7 +39,7 @@ mod switching;
 mod transfer;
 mod updates;
 
-pub use release::{app_update_due, APP_UPDATE_INTERVAL};
+pub use release::{app_update_due, AppUpdateHold, APP_UPDATE_INTERVAL};
 pub use transfer::OpEnv;
 pub use updates::UpdateEnv;
 #[cfg(test)]
@@ -269,8 +269,7 @@ impl Library {
             };
             ApiError::new(code, Some(e.to_string()))
         })?;
-        let png = icons::thumbnail(&mut container, &icon, icons::THUMBNAIL_EDGE)
-            .map_err(|e| ApiError::new(ErrorCode::Internal, Some(e.to_string())))?;
+        let png = guard_decoder(|| icons::thumbnail(&mut container, &icon, icons::THUMBNAIL_EDGE))?;
         self.store.put_thumbnail(&path, stamp, &png)?;
         Ok(png)
     }
@@ -494,6 +493,18 @@ impl Library {
             secs
         )
     }
+}
+
+/// `Internal` detail when an icon decoder panicked.
+pub const DECODER_PANIC: &str = "iconDecoderPanic";
+
+/// Runs an icon decoder over an untrusted file. The decoders include third-party code; a panic
+/// there (a crafted icon) must give "no thumbnail" like any other failure, not unwind the
+/// caller's thread, which would leave the thumbnail request unanswered.
+fn guard_decoder<T>(decode: impl FnOnce() -> Result<T, icons::IconError>) -> Result<T, ApiError> {
+    std::panic::catch_unwind(std::panic::AssertUnwindSafe(decode))
+        .map_err(|_| ApiError::new(ErrorCode::Internal, Some(DECODER_PANIC.to_string())))?
+        .map_err(|e| ApiError::new(ErrorCode::Internal, Some(e.to_string())))
 }
 
 fn profile_not_found(profile_id: &str) -> ApiError {
