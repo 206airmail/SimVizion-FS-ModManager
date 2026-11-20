@@ -6,7 +6,7 @@ SimVizion Mod Manager reads and writes your Farming Simulator 25 files and, when
 
 Use GitHub's private reporting: the **Security** tab of this repository → **Report a vulnerability**. Please do not open a public issue for security problems.
 
-Include what you found, how to reproduce it, and which version you used (Settings shows it). You will get an answer within a week, and a fix or a plan within 30 days for confirmed problems.
+Include what you found, how to reproduce it, and which version you used (the status bar shows it). You will get an answer within a week, and a fix or a plan within 30 days for confirmed problems.
 
 ## Supported versions
 

@@ -14,7 +14,7 @@ A Windows desktop app for managing **Farming Simulator 25** mods: mod folders as
 - **Copy, move and remove** mods between folders, with progress and Cancel. Removed and replaced mods go to the Windows Recycle Bin.
 - **Compare** two folders side by side, and **check a savegame** against a folder: which mods it needs that are missing, in another version, or a different file.
 - **Tags and notes** on mods.
-- **Mod updates** (off until you turn them on): finds newer versions through the [SiloAPI](https://silo-api.hllmr.com) catalog and installs ModHub and GitHub updates in one click, checked before anything is replaced. Mods from other sites can be linked by hand.
+- **Mod updates** (off until you turn them on): finds newer versions through the [SiloAPI](https://silo-api.hllmr.com) catalog and installs ModHub and GitHub updates in one click. A download must come from the mod's own ModHub entry or GitHub repository, and must be a mod zip with the same file name and at least the promised version (and the catalog's SHA-256, when it has one) before anything is replaced; beyond that, the app relies on the catalog for which repository a mod lives in. Mods from other sites can be linked by hand.
 - **Launch game** from the app.
 
 ## Install
@@ -45,7 +45,7 @@ If the app does not find your game, use **Choose game folder…** and pick the f
 Nothing goes online until you switch it on in Settings, and there is no telemetry.
 
 - **Mod updates** send your mod file names, and SHA-256 fingerprints of zips the catalog does not know by name, to `silo-api.hllmr.com`. Installing an update fetches the mod's ModHub page and download (`www.farming-simulator.com`, `cdn*.giants-software.com`) or its GitHub release download. Checks run at most every 3 hours.
-- **App updates** read this repository's release feed on GitHub, at most once a day.
+- **App updates** read this repository's release feed on GitHub: at most once a day, or at each start while an update is waiting to be installed.
 
 ## Safety
 
