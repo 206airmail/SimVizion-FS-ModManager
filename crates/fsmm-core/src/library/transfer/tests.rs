@@ -909,6 +909,47 @@ fn a_second_operation_while_one_runs_is_busy_and_reads_still_work() {
     assert!(t.exec(&other.plan_id, &[]).is_ok());
 }
 
+/// The app must not exit, nor update itself, in the middle of a file operation.
+#[test]
+fn a_running_file_operation_is_visible_to_the_app_and_refuses_its_update() {
+    let t = T::new();
+    write_mod(&t.a, "A.zip", "A", "1.0.0.0");
+    let plan = t.plan(&["A.zip"], TransferMode::Copy);
+    assert!(!t.lib.operation_running());
+
+    let seen = Mutex::new(Vec::new());
+    t.exec_with(&plan.plan_id, &[], &|_| {
+        seen.lock().unwrap().push((
+            t.lib.operation_running(),
+            t.lib.file_operation_running(),
+            t.lib.begin_app_update().err().map(|e| e.code),
+        ));
+    })
+    .unwrap();
+
+    let seen = seen.into_inner().unwrap();
+    assert!(!seen.is_empty());
+    assert!(seen
+        .iter()
+        .all(|s| *s == (true, true, Some(ErrorCode::Busy))));
+    assert!(!t.lib.operation_running());
+    assert!(t.lib.begin_app_update().is_ok());
+}
+
+/// While the app's own update holds the flags, no file operation starts.
+#[test]
+fn a_file_operation_is_refused_while_the_app_updates_itself() {
+    let t = T::new();
+    write_mod(&t.a, "A.zip", "A", "1.0.0.0");
+    let plan = t.plan(&["A.zip"], TransferMode::Copy);
+    let hold = t.lib.begin_app_update().unwrap();
+    assert_eq!(err_code(t.exec(&plan.plan_id, &[])), ErrorCode::Busy);
+    assert_eq!(err_code(t.remove(&["A.zip"])), ErrorCode::Busy);
+    assert!(names(&t.b).is_empty());
+    drop(hold);
+    assert!(t.exec(&plan.plan_id, &[]).is_ok());
+}
+
 #[test]
 fn a_panic_in_a_progress_callback_releases_the_busy_flag() {
     let t = T::new();

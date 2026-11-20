@@ -590,6 +590,7 @@ pub fn copy_staged_replacing(
     )
 }
 
+#[allow(clippy::too_many_arguments)]
 fn stage(
     src: &Path,
     dst_dir: &Path,

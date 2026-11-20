@@ -84,7 +84,7 @@ pub struct UpdateEnv<'a> {
 /// The flag that keeps requests to one at a time.
 #[derive(Default)]
 pub(super) struct NetState {
-    busy: AtomicBool,
+    pub(super) busy: AtomicBool,
 }
 
 pub(super) fn iso(time: SystemTime) -> String {

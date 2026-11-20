@@ -13,12 +13,40 @@ use crate::AppState;
 const ALLOW_WRITES_VAR: &str = "FSMM_ALLOW_GAME_WRITES";
 
 /// Release builds always write; debug builds only when `FSMM_ALLOW_GAME_WRITES=1`, so a
-/// development session cannot change the developer's real game settings by accident.
-fn writes_allowed() -> Result<(), ApiError> {
-    if cfg!(debug_assertions) && std::env::var(ALLOW_WRITES_VAR).as_deref() != Ok("1") {
+/// development session cannot change the developer's real game settings or mods by accident.
+/// Every command that writes game files asks (settings, copy, move, remove, mod updates).
+pub(crate) fn writes_allowed() -> Result<(), ApiError> {
+    check_writes(
+        cfg!(debug_assertions),
+        std::env::var(ALLOW_WRITES_VAR).ok().as_deref(),
+    )
+}
+
+fn check_writes(debug_build: bool, allow: Option<&str>) -> Result<(), ApiError> {
+    if debug_build && allow != Some("1") {
         return Err(ApiError::new(ErrorCode::WritesDisabled, None));
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn debug_builds_write_only_when_allowed_and_release_builds_always_do() {
+        for allow in [None, Some(""), Some("0"), Some("true")] {
+            assert_eq!(
+                check_writes(true, allow).unwrap_err().code,
+                ErrorCode::WritesDisabled,
+                "{allow:?}"
+            );
+        }
+        assert!(check_writes(true, Some("1")).is_ok());
+        for allow in [None, Some("0"), Some("1")] {
+            assert!(check_writes(false, allow).is_ok(), "{allow:?}");
+        }
+    }
 }
 
 fn running() -> Running {
@@ -61,7 +89,7 @@ pub async fn latest_settings_backup(
     let backups = state.backups_dir.clone();
     blocking(move || {
         Ok(library
-            .latest_backup(&backups)
+            .latest_backup(&context(), &backups)
             .map(|time| humantime::format_rfc3339_seconds(time).to_string()))
     })
     .await
