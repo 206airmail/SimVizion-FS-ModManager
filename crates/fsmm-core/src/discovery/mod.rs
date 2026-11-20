@@ -36,8 +36,9 @@ pub trait SystemProbe {
     fn registry_string(&self, hive: Hive, key: &str, value: &str) -> Option<String>;
     /// Names of the direct subkeys of `key`; empty if it is missing.
     fn registry_subkeys(&self, hive: Hive, key: &str) -> Vec<String>;
-    /// Executable file names of running processes, e.g. `dedicatedServer.exe`.
-    fn process_names(&self) -> Vec<String>;
+    /// Executable file names of running processes, e.g. `dedicatedServer.exe`; `None` when the
+    /// list could not be read (which is not the same as an empty list).
+    fn process_names(&self) -> Option<Vec<String>>;
     /// The Documents known folder, honouring redirection.
     fn documents_dir(&self) -> Option<PathBuf>;
     /// `%ProgramData%`, where the Epic launcher keeps its manifests.
@@ -143,10 +144,14 @@ pub fn valid_game_folder(dir: &Path) -> bool {
     dir.join("gameSettings.xml").is_file() || dir.join("mods").is_dir()
 }
 
+/// Whether the game and the dedicated server run. When the process list could not be read
+/// (`unknown`), `game` and `server` are best-effort `false`; a write guard must then refuse
+/// (`ops::check_not_running`), while a display or a launch may carry on.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct Running {
     pub game: bool,
     pub server: bool,
+    pub unknown: bool,
 }
 
 /// The `<modsDirectoryOverride active=".." directory=".."/>` element of `gameSettings.xml`.
@@ -392,7 +397,12 @@ pub fn user_dir(probe: &dyn SystemProbe) -> Option<PathBuf> {
 }
 
 pub fn running(probe: &dyn SystemProbe) -> Running {
-    let names = probe.process_names();
+    let Some(names) = probe.process_names() else {
+        return Running {
+            unknown: true,
+            ..Running::default()
+        };
+    };
     let has = |wanted: &[&str]| {
         names
             .iter()
@@ -401,6 +411,7 @@ pub fn running(probe: &dyn SystemProbe) -> Running {
     Running {
         game: has(GAME_PROCESS_NAMES),
         server: has(&[SERVER_PROCESS_NAME]),
+        unknown: false,
     }
 }
 

@@ -310,6 +310,7 @@ fn a_running_game_or_server_leaves_no_backup_no_temp_file_and_no_change() {
             Running {
                 game: true,
                 server: false,
+                unknown: false,
             },
             ErrorCode::GameRunning,
         ),
@@ -317,6 +318,7 @@ fn a_running_game_or_server_leaves_no_backup_no_temp_file_and_no_change() {
             Running {
                 game: false,
                 server: true,
+                unknown: false,
             },
             ErrorCode::ServerRunning,
         ),
@@ -383,6 +385,7 @@ fn the_game_starting_mid_write_leaves_the_original() {
         Running {
             game: calls.get() >= 2,
             server: false,
+            unknown: false,
         }
     };
     let result = env
@@ -659,6 +662,7 @@ fn no_error_text_contains_file_contents() {
                 &|| Running {
                     game: true,
                     server: false,
+                    unknown: false,
                 },
                 &env2.backups,
             )

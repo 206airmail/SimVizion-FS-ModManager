@@ -22,6 +22,8 @@ struct FakeProbe {
     /// (hive, full key path, value name, data)
     values: Vec<(Hive, String, String, String)>,
     processes: Vec<String>,
+    /// The process list cannot be read at all.
+    processes_unreadable: bool,
     documents: Option<PathBuf>,
     program_data: Option<PathBuf>,
     local_app_data: Option<PathBuf>,
@@ -59,8 +61,8 @@ impl SystemProbe for FakeProbe {
         }
         out
     }
-    fn process_names(&self) -> Vec<String> {
-        self.processes.clone()
+    fn process_names(&self) -> Option<Vec<String>> {
+        (!self.processes_unreadable).then(|| self.processes.clone())
     }
     fn documents_dir(&self) -> Option<PathBuf> {
         self.documents.clone()
@@ -600,7 +602,8 @@ fn running_matches_names_case_insensitively() {
         running(&probe),
         Running {
             game: true,
-            server: false
+            server: false,
+            unknown: false
         }
     );
     probe.processes = vec![
@@ -611,17 +614,49 @@ fn running_matches_names_case_insensitively() {
         running(&probe),
         Running {
             game: true,
-            server: true
+            server: true,
+            unknown: false
         }
     );
     probe.processes = vec!["FarmingSimulator2025Helper.exe".into()];
     assert_eq!(running(&probe), Running::default());
 }
 
+/// An unreadable process list is "unknown", not "nothing is running": the booleans stay
+/// best-effort `false`, so a display or a launch can carry on, and write guards refuse.
+#[test]
+fn an_unreadable_process_list_is_unknown_not_empty() {
+    let mut probe = FakeProbe::default();
+    // A readable but empty list is a definite "nothing is running".
+    let empty = running(&probe);
+    assert_eq!(empty, Running::default());
+    assert!(!empty.unknown);
+
+    probe.processes = vec!["FarmingSimulator2025Game.exe".into()];
+    probe.processes_unreadable = true;
+    let unknown = running(&probe);
+    assert_eq!(
+        unknown,
+        Running {
+            game: false,
+            server: false,
+            unknown: true
+        }
+    );
+    // The status and the launch carry on with best-effort booleans.
+    assert!(!game_status(&probe, None).game_running);
+    assert!(launch_target(&probe).is_err_and(|e| e.code != ErrorCode::GameRunning));
+    // The guard refuses.
+    assert!(matches!(
+        crate::ops::check_not_running(&|| unknown),
+        Err(crate::ops::OpError::RunningUnknown)
+    ));
+}
+
 #[cfg(windows)]
 #[test]
 fn windows_probe_lists_running_processes() {
-    assert!(!WindowsProbe.process_names().is_empty());
+    assert!(!WindowsProbe.process_names().unwrap().is_empty());
 }
 
 // ---- user folder, profiles, status ----
