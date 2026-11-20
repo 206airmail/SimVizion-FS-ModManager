@@ -31,6 +31,17 @@ pub(super) fn decode(bytes: &[u8]) -> Result<Rgba, IconError> {
     super::check_pixel_budget(width, height)?;
 
     let mut reader = decoder.read_info().map_err(malformed)?;
+    // The decoder panics expanding a palette that is not whole RGB triples.
+    if reader
+        .info()
+        .palette
+        .as_ref()
+        .is_some_and(|palette| palette.len() % 3 != 0)
+    {
+        return Err(IconError::Malformed(
+            "PNG palette is not a whole number of colours".into(),
+        ));
+    }
     let size = reader
         .output_buffer_size()
         .ok_or_else(|| IconError::Malformed("PNG is too large to decode".into()))?;
@@ -157,6 +168,39 @@ mod tests {
             decode(&palette).unwrap().pixels,
             [10, 20, 30, 255, 40, 50, 60, 128]
         );
+    }
+
+    /// The `png` crate accepts a PLTE chunk of any length from 3 to 768 and panics when expanding
+    /// one that is not a multiple of 3: a 70-byte file could take down the decoding thread.
+    #[test]
+    fn a_palette_that_is_not_whole_colours_is_rejected_before_decoding() {
+        for palette in [vec![1, 2, 3, 4], vec![1, 2, 3, 4, 5], vec![9; 700]] {
+            let crafted = encode(
+                1,
+                1,
+                ColorType::Indexed,
+                png::BitDepth::Eight,
+                |e| e.set_palette(palette.clone()),
+                &[0],
+            );
+            let result = std::panic::catch_unwind(|| decode(&crafted));
+            let result = result.expect("the decoder panicked");
+            assert!(
+                matches!(&result, Err(IconError::Malformed(m)) if m.contains("palette")),
+                "{} bytes: {result:?}",
+                palette.len()
+            );
+        }
+        // A whole number of colours still decodes.
+        let fine = encode(
+            1,
+            1,
+            ColorType::Indexed,
+            png::BitDepth::Eight,
+            |e| e.set_palette(vec![1, 2, 3, 4, 5, 6]),
+            &[1],
+        );
+        assert_eq!(decode(&fine).unwrap().pixels, [4, 5, 6, 255]);
     }
 
     #[test]

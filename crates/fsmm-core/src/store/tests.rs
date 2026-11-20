@@ -475,6 +475,7 @@ fn journal_rows_round_trip_and_ids_follow_the_rowid() {
             to: &default,
             backup_file: Some("gameSettings-1.xml"),
             result: "ok",
+            settings_key: Some(r"c:\users\me\gamesettings.xml"),
         })
         .unwrap();
     let id2 = store
@@ -484,6 +485,7 @@ fn journal_rows_round_trip_and_ids_follow_the_rowid() {
             to: &a,
             backup_file: None,
             result: "settingsChanged",
+            settings_key: None,
         })
         .unwrap();
     assert_eq!((id1.as_str(), id2.as_str()), ("o1", "o2"));
@@ -496,6 +498,11 @@ fn journal_rows_round_trip_and_ids_follow_the_rowid() {
     assert_eq!(ops[0].backup_file.as_deref(), Some("gameSettings-1.xml"));
     assert!(ops[0].at > 0);
     assert_eq!(ops[1].backup_file, None);
+    assert_eq!(
+        ops[0].settings_key.as_deref(),
+        Some(r"c:\users\me\gamesettings.xml")
+    );
+    assert_eq!(ops[1].settings_key, None);
 
     // Failed attempts are rows but are never the latest successful write.
     assert_eq!(store.latest_ok_op().unwrap().unwrap().id, "o1");
@@ -516,6 +523,7 @@ fn the_journal_survives_reopening() {
                 to: &state,
                 backup_file: Some("b.xml"),
                 result: "ok",
+                settings_key: None,
             })
             .unwrap();
     }
@@ -636,6 +644,28 @@ fn the_real_library_migrations_apply_from_every_older_version() {
             assert_eq!(kept, 1, "profiles survive a migration from {from}");
         }
     }
+}
+
+#[test]
+fn a_journal_row_from_before_the_settings_key_has_none() {
+    let mut conn = Connection::open_in_memory().unwrap();
+    // The schema as it shipped before the key was recorded.
+    migrate(
+        &mut conn,
+        &LIBRARY_MIGRATIONS[..LIBRARY_MIGRATIONS.len() - 1],
+    )
+    .unwrap();
+    conn.execute(
+        "INSERT INTO ops (at, kind, from_active, from_dir, to_active, to_dir, backup_file, result) \
+         VALUES (1, 'switch', 1, 'C:\\a', 1, 'C:\\b', 'gameSettings-1.xml', 'ok')",
+        [],
+    )
+    .unwrap();
+    migrate(&mut conn, LIBRARY_MIGRATIONS).unwrap();
+    let key: Option<String> = conn
+        .query_row("SELECT settings_key FROM ops", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(key, None);
 }
 
 #[test]
