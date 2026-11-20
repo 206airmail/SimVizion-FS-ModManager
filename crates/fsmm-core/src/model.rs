@@ -378,6 +378,11 @@ pub enum ErrorCode {
     InvalidGameFolder,
     /// Checking for, downloading or installing an app update failed; `detail` is technical.
     AppUpdateFailed,
+    /// The old version of a mod went to the Recycle Bin but its verified replacement could not take
+    /// its name; the new file was kept under the hidden name in `detail`, next to where it belongs.
+    ReplaceIncomplete,
+    /// Windows could not say whether the game or its server is running, so nothing was written.
+    RunningUnknown,
     /// Anything unexpected; `detail` holds a technical message for a bug report.
     Internal,
 }
