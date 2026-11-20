@@ -15,6 +15,7 @@ use tauri::ipc::Channel;
 use tauri::State;
 
 use crate::commands::{blocking, context, log_timing};
+use crate::switching::writes_allowed;
 use crate::AppState;
 
 fn http() -> &'static Http {
@@ -81,6 +82,7 @@ pub async fn install_update(
 ) -> Result<OpResult, ApiError> {
     let library = state.library.clone();
     blocking(move || {
+        writes_allowed()?;
         let files = crate::transfer::env();
         let env = UpdateEnv {
             catalog: http(),

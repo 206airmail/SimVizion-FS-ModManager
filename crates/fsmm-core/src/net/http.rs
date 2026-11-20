@@ -219,6 +219,7 @@ impl Web for Http {
         &self,
         url: &str,
         referer: Option<&str>,
+        max_bytes: u64,
         sink: &mut dyn Write,
         progress: &mut dyn FnMut(u64),
         cancel: &AtomicBool,
@@ -254,14 +255,27 @@ impl Web for Http {
                 Step::Done => {}
             }
             check_status(status, response.headers(), SystemTime::now())?;
-            return stream(&mut response.body_mut().as_reader(), sink, progress, cancel);
+            // A server that says up front how large it is does not get to start.
+            if content_length(response.headers()).is_some_and(|len| len > max_bytes) {
+                return Err(NetError::TooLarge);
+            }
+            return stream(
+                &mut response.body_mut().as_reader(),
+                max_bytes,
+                sink,
+                progress,
+                cancel,
+            );
         }
     }
 }
 
 /// Copies a body into `sink` in chunks, checking `cancel` before every read (the last included).
+/// A body that would pass `max_bytes` stops with [`NetError::TooLarge`] before the chunk that
+/// crosses the limit is written.
 pub(super) fn stream(
     reader: &mut dyn Read,
+    max_bytes: u64,
     sink: &mut dyn Write,
     progress: &mut dyn FnMut(u64),
     cancel: &AtomicBool,
@@ -278,6 +292,9 @@ pub(super) fn stream(
             Err(e) if e.kind() == io::ErrorKind::Interrupted => continue,
             Err(_) => return Err(NetError::Offline),
         };
+        if total.saturating_add(n as u64) > max_bytes {
+            return Err(NetError::TooLarge);
+        }
         sink.write_all(&buf[..n])
             .map_err(|_| NetError::BadAnswer("sinkWrite".to_string()))?;
         total += n as u64;
@@ -345,6 +362,10 @@ fn location_of(headers: &HeaderMap) -> Option<&str> {
     header_text(headers, "location")
 }
 
+fn content_length(headers: &HeaderMap) -> Option<u64> {
+    header_text(headers, "content-length")?.trim().parse().ok()
+}
+
 /// When a 429 says to come back: `Retry-After` (seconds or an HTTP date), else
 /// `x-ratelimit-reset` (seconds from now, or a Unix time when it is that large). Never more than
 /// a day away.
@@ -352,9 +373,16 @@ pub(super) fn retry_after_from(headers: &HeaderMap, now: SystemTime) -> Option<S
     let at = header_text(headers, "retry-after")
         .and_then(|v| parse_wait(v, now))
         .or_else(|| header_text(headers, "x-ratelimit-reset").and_then(|v| parse_wait(v, now)))?;
-    Some(at.min(now + MAX_RETRY_WAIT))
+    Some(at.min(latest(now)))
 }
 
+/// The furthest a server may send us away from `now`.
+fn latest(now: SystemTime) -> SystemTime {
+    now.checked_add(MAX_RETRY_WAIT).unwrap_or(now)
+}
+
+/// A wait as a time: the header's value is clamped before anything is converted or added, so no
+/// value a server can send overflows (`1e300`, `1e19`, `99999999999999999` all mean "a day").
 fn parse_wait(value: &str, now: SystemTime) -> Option<SystemTime> {
     let value = value.trim();
     if let Ok(seconds) = value.parse::<f64>() {
@@ -362,11 +390,16 @@ fn parse_wait(value: &str, now: SystemTime) -> Option<SystemTime> {
             return None;
         }
         // A reset header may hold a Unix time instead of a delay.
-        return Some(if seconds >= 1_000_000_000.0 {
-            UNIX_EPOCH + Duration::from_secs_f64(seconds)
+        let at = if seconds >= 1_000_000_000.0 {
+            Duration::try_from_secs_f64(seconds)
+                .ok()
+                .and_then(|since_epoch| UNIX_EPOCH.checked_add(since_epoch))
         } else {
-            now + Duration::from_secs_f64(seconds)
-        });
+            Duration::try_from_secs_f64(seconds)
+                .ok()
+                .and_then(|delay| now.checked_add(delay))
+        };
+        return Some(at.unwrap_or_else(|| latest(now)));
     }
     parse_http_date(value)
 }

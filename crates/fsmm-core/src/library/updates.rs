@@ -65,6 +65,12 @@ pub const FORCE_DEBOUNCE: Duration = Duration::from_secs(60);
 const DEFAULT_RETRY: Duration = Duration::from_secs(60);
 /// Longest link the user may store, in characters.
 pub const MAX_LINK_CHARS: usize = 2000;
+/// The most a download may be when no size is known (GitHub): no mod comes near it.
+const MAX_DOWNLOAD_BYTES: u64 = 8 * 1024 * 1024 * 1024;
+/// Free space a download always leaves on the volume it is written to.
+const SPACE_RESERVE: u64 = 256 * 1024 * 1024;
+/// What a ModHub download may be over the size its page shows, besides 10%.
+const SIZE_SLACK: u64 = 1024 * 1024;
 
 /// What updates need from the outside world; tests pass fakes and a fixed clock.
 pub struct UpdateEnv<'a> {
@@ -78,7 +84,7 @@ pub struct UpdateEnv<'a> {
 /// The flag that keeps requests to one at a time.
 #[derive(Default)]
 pub(super) struct NetState {
-    busy: AtomicBool,
+    pub(super) busy: AtomicBool,
 }
 
 pub(super) fn iso(time: SystemTime) -> String {
@@ -283,6 +289,8 @@ fn api_error(error: &NetError) -> ApiError {
             ApiError::new(ErrorCode::Internal, Some(format!("badAnswer: {detail}")))
         }
         NetError::Cancelled => ApiError::new(ErrorCode::Cancelled, None),
+        // A file that is not the size it promised cannot be the update: nothing was replaced.
+        NetError::TooLarge => ApiError::new(ErrorCode::VerifyFailed, Some("tooLarge".to_string())),
     }
 }
 
@@ -304,6 +312,7 @@ fn install_code(error: &FileOpError) -> ErrorCode {
         FileOpError::Exists => ErrorCode::TargetChanged,
         FileOpError::Verify(_) => ErrorCode::VerifyFailed,
         FileOpError::Io(_) => ErrorCode::WriteFailed,
+        FileOpError::ReplaceIncomplete(_) => ErrorCode::ReplaceIncomplete,
         FileOpError::Recycle(r) => recycle_code(r),
     }
 }
@@ -328,6 +337,9 @@ impl Write for Sink<'_> {
 
 /// Where a resolved update comes from and what it must be.
 struct Resolved {
+    /// The most bytes the download may be; set from the size the source promised and the space
+    /// on the volume once the target is known.
+    max_bytes: u64,
     url: String,
     /// The ModHub page the link was found on, sent with the download.
     referer: Option<String>,
@@ -698,6 +710,9 @@ impl Library {
         let _busy = BusyGuard::acquire(&self.transfer.busy)?;
         let _net = BusyGuard::acquire(&self.updates.busy)?;
         ops::check_not_running(env.files.running)?;
+        // Cleared here, not after the download is resolved: that takes network requests, and a
+        // Cancel pressed meanwhile must still count (the loop below sees it before it downloads).
+        self.transfer.cancel.store(false, Ordering::SeqCst);
 
         let found = self
             .store
@@ -733,18 +748,22 @@ impl Library {
         };
 
         let file_name = first.entry.file_name.clone();
-        let resolved = self.resolve_download(&found, source, &file_name, &targets, env)?;
+        let mut resolved = self.resolve_download(&found, source, &file_name, &targets, env)?;
         let estimate = resolved.check.approx_size.unwrap_or(first.stamp.size);
         let free = env
             .files
             .disk
             .free_bytes(&first.profile.path)
             .map_err(|e| io_api(&e))?;
-        if estimate > free {
+        // The download never fills the volume: it stops at what its source promised, or at the
+        // space there is less a reserve, whichever is smaller.
+        resolved.max_bytes = resolved.max_bytes.min(free.saturating_sub(SPACE_RESERVE));
+        if estimate > resolved.max_bytes {
             return Err(ApiError::new(ErrorCode::NotEnoughSpace, None));
         }
 
-        self.transfer.cancel.store(false, Ordering::SeqCst);
+        // A Cancel pressed while the download was being resolved is still set here, and the loop
+        // below stops before anything is downloaded.
         let plan_id = format!(
             "u{}",
             self.transfer.next_plan.fetch_add(1, Ordering::SeqCst) + 1
@@ -767,15 +786,23 @@ impl Library {
                 continue;
             }
             tracker.begin(&file_name);
+            // The verified file that was kept under its staged name, when it could not be renamed.
+            let mut kept: Option<PathBuf> = None;
             let outcome = match &installed {
-                None => {
-                    self.install_first(target, &file_name, &resolved, &plan_id, env, &mut tracker)
-                }
+                None => self.install_first(
+                    target,
+                    &file_name,
+                    &resolved,
+                    &plan_id,
+                    env,
+                    &mut tracker,
+                    &mut kept,
+                ),
                 Some(from) => self
-                    .install_copy(target, from, &plan_id, env, &mut tracker)
+                    .install_copy(target, from, &plan_id, env, &mut tracker, &mut kept)
                     .map(|()| from.clone()),
             };
-            let new_path = target.profile.path.join(&file_name);
+            let new_path = kept.unwrap_or_else(|| target.profile.path.join(&file_name));
             self.journal_file_op(
                 "update",
                 Some(&plan_id),
@@ -823,7 +850,7 @@ impl Library {
         env: &UpdateEnv<'_>,
     ) -> Result<Resolved, ApiError> {
         let now = (env.now)();
-        let (url, referer, version, sha256, approx_size) = match source {
+        let (url, referer, version, sha256, approx_size, max_bytes) = match source {
             LinkKind::ModHub => {
                 let (page, id) =
                     modhub_page(found).ok_or_else(|| not_installable("noDirectDownload"))?;
@@ -834,12 +861,19 @@ impl Library {
                 let link = net::modhub_download(&html, &id)
                     .ok_or_else(|| not_installable("noDownloadLink"))?;
                 let version = link.version.or_else(|| found.latest_version.clone());
+                // The page's size, 10% more and a megabyte; without a size, the hard maximum.
+                let max_bytes = link.approx_size.map_or(MAX_DOWNLOAD_BYTES, |size| {
+                    size.saturating_add(size / 10)
+                        .saturating_add(SIZE_SLACK)
+                        .min(MAX_DOWNLOAD_BYTES)
+                });
                 (
                     link.url,
                     Some(page.to_string()),
                     version,
                     None,
                     link.approx_size,
+                    max_bytes,
                 )
             }
             _ => {
@@ -866,12 +900,14 @@ impl Library {
                         _ => false,
                     }
                 });
+                // No size is known for a GitHub asset: only the hard maximum.
                 (
                     asset.download_url.clone().unwrap_or_default(),
                     None,
                     version,
                     sha256,
                     None,
+                    MAX_DOWNLOAD_BYTES,
                 )
             }
         };
@@ -884,6 +920,20 @@ impl Library {
         if !same_name {
             return Err(not_installable("fileName"));
         }
+        // A GitHub asset must be a release of the repository the catalog's own lookup named (the
+        // one the page shows): anyone can publish an asset on github.com, and one answer of a
+        // third-party service must not be enough to install it.
+        if source != LinkKind::ModHub {
+            let matched = found.github_url.as_deref().and_then(net::github_repo);
+            let same_repo = matched.is_some_and(|(owner, repo)| {
+                net::github_release_repo(&url).is_some_and(|(o, r)| {
+                    o.eq_ignore_ascii_case(&owner) && r.eq_ignore_ascii_case(&repo)
+                })
+            });
+            if !same_repo {
+                return Err(not_installable("repoMismatch"));
+            }
+        }
         if !targets
             .iter()
             .any(|t| net::is_newer(&version, &t.entry.version) == Some(true))
@@ -891,6 +941,7 @@ impl Library {
             return Err(not_installable("upToDate"));
         }
         Ok(Resolved {
+            max_bytes,
             url,
             referer,
             check: DownloadCheck {
@@ -902,6 +953,7 @@ impl Library {
     }
 
     /// Downloads into the first folder, verifies, recycles the old zip and takes its place.
+    #[allow(clippy::too_many_arguments)]
     fn install_first(
         &self,
         target: &Holder,
@@ -910,6 +962,7 @@ impl Library {
         plan_id: &str,
         env: &UpdateEnv<'_>,
         tracker: &mut Tracker<'_>,
+        kept: &mut Option<PathBuf>,
     ) -> Result<PathBuf, ErrorCode> {
         let cancel = &self.transfer.cancel;
         let mut net_error: Option<NetError> = None;
@@ -922,6 +975,7 @@ impl Library {
                 let result = env.web.download(
                     &resolved.url,
                     resolved.referer.as_deref(),
+                    resolved.max_bytes,
                     &mut sink,
                     &mut |n| tracker.add_bytes(n),
                     cancel,
@@ -942,6 +996,9 @@ impl Library {
             &mut || self.replace_old(target, plan_id, env, &mut refused),
         );
         outcome.map_err(|e| {
+            if let FileOpError::ReplaceIncomplete(name) = &e {
+                *kept = Some(target.profile.path.join(name));
+            }
             refused
                 .or_else(|| net_error.as_ref().map(net_code))
                 .unwrap_or_else(|| install_code(&e))
@@ -956,6 +1013,7 @@ impl Library {
         plan_id: &str,
         env: &UpdateEnv<'_>,
         tracker: &mut Tracker<'_>,
+        kept: &mut Option<PathBuf>,
     ) -> Result<(), ErrorCode> {
         running_code(env.files)?;
         let size = fs::metadata(source)
@@ -978,7 +1036,12 @@ impl Library {
             &mut || self.replace_old(target, plan_id, env, &mut refused),
         )
         .map(|_| ())
-        .map_err(|e| refused.unwrap_or_else(|| install_code(&e)))
+        .map_err(|e| {
+            if let FileOpError::ReplaceIncomplete(name) = &e {
+                *kept = Some(target.profile.path.join(name));
+            }
+            refused.unwrap_or_else(|| install_code(&e))
+        })
     }
 
     /// The step just before a new file takes its name: the last look at the guards, then the old

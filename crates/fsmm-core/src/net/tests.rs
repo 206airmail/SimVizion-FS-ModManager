@@ -367,6 +367,46 @@ fn a_link_with_single_quotes_or_an_amp_entity_in_it_is_read() {
     assert!(modhub_download(html, ID).is_none());
 }
 
+/// `modhub_download` on its own thread, so a parser that never returns fails the test at once
+/// instead of hanging the run.
+fn modhub_download_within_a_second(html: &str, id: &str) -> Option<ModHubDownload> {
+    let (sender, receiver) = std::sync::mpsc::channel();
+    let (html, id) = (html.to_string(), id.to_string());
+    std::thread::spawn(move || {
+        let _ = sender.send(modhub_download(&html, &id));
+    });
+    receiver
+        .recv_timeout(Duration::from_secs(1))
+        .expect("the parser did not return")
+}
+
+#[test]
+fn anchors_without_an_href_never_stall_the_parser() {
+    let link = "<a href=\"https://cdn27.giants-software.com/modHub/storage/00331515/FS25_X.zip\">DOWNLOAD</a>";
+    for plain in [
+        "<a class=\"x\">menu</a>",
+        "<a>menu</a>",
+        "<a name=top>menu</a>",
+        "<a id='top' class=\"x y\" >menu</a>",
+        "<a disabled/>",
+        "<a class=\"x\"/>",
+    ] {
+        for html in [
+            format!("{plain}{link}"),
+            format!("{link}{plain}"),
+            format!("{plain}{link}{plain}"),
+        ] {
+            let found = modhub_download_within_a_second(&html, ID)
+                .unwrap_or_else(|| panic!("no download in {html}"));
+            assert_eq!(found.file_name, "FS25_X.zip", "{html}");
+        }
+        assert!(
+            modhub_download_within_a_second(plain, ID).is_none(),
+            "{plain}"
+        );
+    }
+}
+
 #[test]
 fn modhub_sizes_are_read_in_binary_units() {
     let page = |size: &str| {
@@ -445,6 +485,36 @@ fn github_repos_are_read_from_https_urls_on_github_com() {
     }
     assert!(github_repo_lenient("http://github.com/o/r").is_some());
     assert!(github_repo_lenient("http://github.com.evil.com/o/r").is_none());
+}
+
+#[test]
+fn only_release_assets_name_their_repository_for_a_download() {
+    let repo = |url: &str| github_release_repo(url);
+    let some = |o: &str, r: &str| Some((o.to_string(), r.to_string()));
+    assert_eq!(
+        repo("https://github.com/Courseplay/Courseplay_FS25/releases/download/v7.0.0.0/FS25_Courseplay.zip"),
+        some("Courseplay", "Courseplay_FS25")
+    );
+    assert_eq!(
+        repo("https://github.com/o/r.git/releases/download/v1/a.zip"),
+        some("o", "r")
+    );
+    for url in [
+        "https://github.com/o/r",
+        "https://github.com/o/r/releases/download/v1",
+        "https://github.com/o/r/releases/download/v1/",
+        "https://github.com/o/r/releases/latest/download/a.zip",
+        "https://github.com/o/r/releases/tag/v1/a.zip",
+        "https://github.com/o/r/archive/refs/tags/v1.zip",
+        "https://github.com/o/r/raw/main/a.zip",
+        "https://github.com/o/r/blob/main/releases/download/v1/a.zip",
+        "http://github.com/o/r/releases/download/v1/a.zip",
+        "https://objects.githubusercontent.com/o/r/releases/download/v1/a.zip",
+        "https://github.com.evil.example/o/r/releases/download/v1/a.zip",
+        "https://github.com/o/r%20x/releases/download/v1/a.zip",
+    ] {
+        assert_eq!(repo(url), None, "{url}");
+    }
 }
 
 #[test]
@@ -537,6 +607,46 @@ fn the_rate_limit_reset_is_the_fallback_and_may_be_a_unix_time() {
         retry_after_from(&headers(&[("retry-after", "-5")]), now),
         None
     );
+}
+
+/// Values a server can send that used to panic (`Duration::from_secs_f64`, `SystemTime + Duration`)
+/// all mean "as long as allowed" now; none of them panics.
+#[test]
+fn absurd_waits_are_clamped_to_a_day_and_never_panic() {
+    let now = at(1_800_000_000);
+    let day = now + Duration::from_secs(24 * 60 * 60);
+    for value in [
+        "1e300",
+        "1e19",
+        "99999999999999999",
+        "18446744073709551616",
+        "1.7976931348623157e308",
+        "86401",
+        "1000000000",
+    ] {
+        for name in ["retry-after", "x-ratelimit-reset"] {
+            let got = retry_after_from(&headers(&[(name, value)]), now);
+            assert!(
+                got.is_some_and(|t| t <= day),
+                "{name}: {value} gave {got:?}"
+            );
+        }
+    }
+    let far = retry_after_from(&headers(&[("retry-after", "1e300")]), now);
+    assert_eq!(far, Some(day));
+    // Not a wait at all: nothing, as before.
+    for value in [
+        "-1", "-1e300", "NaN", "nan", "inf", "-inf", "infinity", "", "soon",
+    ] {
+        assert_eq!(
+            retry_after_from(&headers(&[("retry-after", value)]), now),
+            None,
+            "{value:?}"
+        );
+    }
+    // A time that is really near stays what it says.
+    let soon = retry_after_from(&headers(&[("retry-after", "30")]), now);
+    assert_eq!(soon, Some(now + Duration::from_secs(30)));
 }
 
 #[test]
@@ -795,7 +905,7 @@ fn the_real_client_refuses_off_list_addresses_before_any_request() {
         "https://github.com.evil.com/x.zip",
         "https://www.farming-simulator.com/mod.php?mod_id=1",
     ] {
-        let result = http.download(url, None, &mut sink, &mut |_| {}, &cancel);
+        let result = http.download(url, None, u64::MAX, &mut sink, &mut |_| {}, &cancel);
         assert_eq!(result, Err(NetError::NotAllowed), "{url}");
     }
     for url in [
@@ -819,6 +929,7 @@ fn the_real_client_sends_only_an_allowed_page_as_referer() {
         let result = http.download(
             "https://cdn1.giants-software.com/modHub/storage/00000001/FS25_A.zip",
             Some(referer),
+            u64::MAX,
             &mut Vec::new(),
             &mut |_| {},
             &cancel,
@@ -834,6 +945,7 @@ fn the_real_client_honours_a_cancel_before_connecting() {
     let result = http.download(
         "https://github.com/o/r/x.zip",
         None,
+        u64::MAX,
         &mut Vec::new(),
         &mut |_| {},
         &cancel,
@@ -880,6 +992,7 @@ fn the_fake_web_streams_in_chunks_counts_bytes_and_cancels_between_them() {
         .download(
             "https://github.com/o/r/a.zip",
             None,
+            u64::MAX,
             &mut sink,
             &mut |n| seen.push(n),
             &AtomicBool::new(false),
@@ -894,6 +1007,7 @@ fn the_fake_web_streams_in_chunks_counts_bytes_and_cancels_between_them() {
     let result = web.download(
         "https://github.com/o/r/a.zip",
         None,
+        u64::MAX,
         &mut sink,
         &mut |_| {},
         &AtomicBool::new(false),
@@ -927,6 +1041,7 @@ fn reading_a_body_stops_at_the_cap_and_a_cancel() {
     let mut total = 0;
     let written = super::http::stream(
         &mut Cursor::new(&data),
+        u64::MAX,
         &mut sink,
         &mut |n| total += n,
         &AtomicBool::new(false),
@@ -937,10 +1052,69 @@ fn reading_a_body_stops_at_the_cap_and_a_cancel() {
     let mut sink = Vec::new();
     let result = super::http::stream(
         &mut Cursor::new(&data),
+        u64::MAX,
         &mut sink,
         &mut |_| {},
         &AtomicBool::new(true),
     );
     assert_eq!(result, Err(NetError::Cancelled));
     assert!(sink.is_empty());
+}
+
+#[test]
+fn a_download_stops_before_the_chunk_that_passes_its_ceiling() {
+    // `stream` reads in 64 KiB steps: 200_000 bytes are 64K + 64K + 64K + 3_392.
+    let data = vec![1u8; 200_000];
+    let mut sink = Vec::new();
+    let mut total = 0;
+    let result = super::http::stream(
+        &mut Cursor::new(&data),
+        150_000,
+        &mut sink,
+        &mut |n| total += n,
+        &AtomicBool::new(false),
+    );
+    assert_eq!(result, Err(NetError::TooLarge));
+    // Two whole chunks were written, never the one that crossed the limit.
+    assert_eq!((sink.len(), total), (2 * 65_536, 2 * 65_536));
+
+    // Exactly at the ceiling is fine.
+    let mut sink = Vec::new();
+    let written = super::http::stream(
+        &mut Cursor::new(&data),
+        200_000,
+        &mut sink,
+        &mut |_| {},
+        &AtomicBool::new(false),
+    )
+    .unwrap();
+    assert_eq!(written, 200_000);
+    // A ceiling of 0 allows only an empty body.
+    let result = super::http::stream(
+        &mut Cursor::new(&data),
+        0,
+        &mut Vec::new(),
+        &mut |_| {},
+        &AtomicBool::new(false),
+    );
+    assert_eq!(result, Err(NetError::TooLarge));
+}
+
+#[test]
+fn the_fake_web_honours_the_ceiling_too() {
+    use super::fakes::FakeWeb;
+    let web = FakeWeb::new()
+        .with_chunk(10)
+        .with_payload("https://github.com/o/r/a.zip", vec![7; 95]);
+    let mut sink = Vec::new();
+    let result = web.download(
+        "https://github.com/o/r/a.zip",
+        None,
+        45,
+        &mut sink,
+        &mut |_| {},
+        &AtomicBool::new(false),
+    );
+    assert_eq!(result, Err(NetError::TooLarge));
+    assert_eq!(sink.len(), 40);
 }

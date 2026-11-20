@@ -90,6 +90,11 @@ const LIBRARY_MIGRATIONS: &[&str] = &[
         value TEXT NOT NULL
     );
 ",
+    // The settings file a journaled write belongs to, so that Undo never applies one folder's
+    // earlier state to another folder's `gameSettings.xml`. Older rows keep NULL: not undoable.
+    "
+    ALTER TABLE ops ADD COLUMN settings_key TEXT;
+",
 ];
 
 /// Migrations of `cache.sqlite`. The cache is disposable, so a file that fails to open or
@@ -203,6 +208,9 @@ pub struct StoredOp {
     pub backup_file: Option<String>,
     /// `ok`, or the camelCase error code of a failed attempt.
     pub result: String,
+    /// The `path_key` of the `gameSettings.xml` this wrote to. Undo applies only to that file;
+    /// rows journaled before this was recorded have none and cannot be undone.
+    pub settings_key: Option<String>,
 }
 
 /// What [`Store::add_op`] needs to journal a write.
@@ -213,6 +221,7 @@ pub struct NewOp<'a> {
     pub to: &'a ModsOverride,
     pub backup_file: Option<&'a str>,
     pub result: &'a str,
+    pub settings_key: Option<&'a str>,
 }
 
 /// One journaled step of a copy, move or remove (plan M5): one row per item attempted, and one
@@ -545,8 +554,9 @@ impl Store {
         let conn = lock(&self.library);
         conn.execute(
             "INSERT INTO ops \
-             (at, kind, from_active, from_dir, to_active, to_dir, backup_file, result) \
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+             (at, kind, from_active, from_dir, to_active, to_dir, backup_file, result, \
+              settings_key) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
             params![
                 at,
                 op.kind,
@@ -555,7 +565,8 @@ impl Store {
                 op.to.active,
                 dir(op.to),
                 op.backup_file,
-                op.result
+                op.result,
+                op.settings_key
             ],
         )?;
         Ok(format!("o{}", conn.last_insert_rowid()))
@@ -567,7 +578,7 @@ impl Store {
         Ok(conn
             .query_row(
                 "SELECT id, at, kind, from_active, from_dir, to_active, to_dir, backup_file, \
-                 result FROM ops WHERE result = 'ok' ORDER BY id DESC LIMIT 1",
+                 result, settings_key FROM ops WHERE result = 'ok' ORDER BY id DESC LIMIT 1",
                 [],
                 op_from_row,
             )
@@ -578,8 +589,8 @@ impl Store {
     pub fn ops(&self) -> Result<Vec<StoredOp>, StoreError> {
         let conn = lock(&self.library);
         let mut stmt = conn.prepare_cached(
-            "SELECT id, at, kind, from_active, from_dir, to_active, to_dir, backup_file, result \
-             FROM ops ORDER BY id",
+            "SELECT id, at, kind, from_active, from_dir, to_active, to_dir, backup_file, result, \
+             settings_key FROM ops ORDER BY id",
         )?;
         let rows = stmt.query_map([], op_from_row)?;
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
@@ -1191,6 +1202,7 @@ fn op_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<StoredOp> {
         to: state(5, 6)?,
         backup_file: row.get(7)?,
         result: row.get(8)?,
+        settings_key: row.get(9)?,
     })
 }
 
