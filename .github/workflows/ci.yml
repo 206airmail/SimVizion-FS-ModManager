@@ -1,10 +1,10 @@
 # Every check from CLAUDE.md, on Windows (the only platform the app supports).
+# Manual only (Actions tab → CI → Run workflow): Actions minutes are limited, so checks run locally
+# during development and CI builds happen for releases (release.yml, which runs the same checks).
 name: CI
 
 on:
-  push:
-    branches: [main, 'm*-*']
-  pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
