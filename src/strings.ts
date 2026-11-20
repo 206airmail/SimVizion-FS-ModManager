@@ -77,6 +77,10 @@ export const strings = {
     invalidGameFolder:
       'That folder is not a Farming Simulator 25 user folder. Choose the folder that holds gameSettings.xml and the mods folder.',
     appUpdateFailed: 'The app update could not be checked or installed. Try again later.',
+    replaceIncomplete:
+      'The old version went to the Recycle Bin, but the new one could not take its name (another program may be using it). The new file was kept as a hidden file in the same folder; try again, or restore the old version from the Recycle Bin.',
+    runningUnknown:
+      'Windows could not tell whether Farming Simulator 25 or its server is running, so nothing was changed. Try again in a moment.',
   } satisfies Record<ErrorCode, string>,
 
   actionFailed: {
