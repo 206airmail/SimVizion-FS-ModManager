@@ -1,5 +1,5 @@
 import { FolderX } from 'lucide-react';
-import { lazy, Suspense, useCallback, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useMemo, useRef, useState } from 'react';
 import type { Profile } from './api';
 import { api } from './api/client';
 import { ActionErrorBanner } from './features/ActionErrorBanner';
@@ -16,6 +16,7 @@ import { AppHeader } from './features/shell/AppHeader';
 import { ProfileRail, type ProfileActions, type Section } from './features/shell/ProfileRail';
 import { StatusBar } from './features/shell/StatusBar';
 import { useGameStatus } from './features/shell/useGameStatus';
+import { withLaunching } from './features/shell/launch';
 import { useLaunch } from './features/shell/useLaunch';
 import { SettingsRestoreBanner } from './features/switching/SettingsRestoreBanner';
 import { useSettingsRestore } from './features/switching/useSettingsRestore';
@@ -82,7 +83,22 @@ function Workspace() {
   // The app's own updates: the same once-per-start check, with its banner above the screens.
   const appUpdates = useAppUpdates({ ready: state.status === 'ready' });
   // Launch game, and the game's user folder (chosen on the first-run screen or in Settings).
-  const launch = useLaunch(game, refreshGame);
+  // Launch waits for a write in progress (a file operation or a switch) to finish.
+  const launch = useLaunch(
+    game,
+    refreshGame,
+    fileOps.running !== null
+      ? strings.header.launchBlockedFileOp
+      : switching.busy !== null
+        ? strings.header.launchBlockedSwitch
+        : null,
+  );
+  // What the screens' write blockers read: the game status, plus "the game is starting" between a
+  // press of Launch game and the process showing up.
+  const guardedGame = useMemo(
+    () => withLaunching(game, launch.launching),
+    [game, launch.launching],
+  );
   const gameFolder = useGameFolder(reloadAfterWrite);
   // A mod the Health screen asked the library to bring up; `id` tells one request from the next.
   const [libraryFocus, setLibraryFocus] = useState<LibraryFocus | null>(null);
@@ -181,7 +197,11 @@ function Workspace() {
         />
 
         <div className="mm-content">
-          <AppUpdateBanner appUpdates={appUpdates} />
+          <AppUpdateBanner
+            appUpdates={appUpdates}
+            fileOperationRunning={fileOps.running !== null}
+            modUpdateChecking={updates.checking}
+          />
           <SettingsRestoreBanner restore={settingsRestore} />
           <FileOpsNotices fileOps={fileOps} />
           {addFolder.message !== null && (
@@ -222,7 +242,7 @@ function Workspace() {
                 key={compareLeftId ?? ''}
                 profiles={profiles}
                 initialLeftId={compareLeftId}
-                game={game}
+                game={guardedGame}
                 fileOps={fileOps}
               />
             </main>
@@ -231,7 +251,7 @@ function Workspace() {
               <SavegamesScreen
                 profiles={profiles}
                 defaultProfileId={activeProfile?.id ?? null}
-                game={game}
+                game={guardedGame}
                 fileOps={fileOps}
                 onOpenSettings={() => setSection('settings')}
               />
@@ -252,7 +272,7 @@ function Workspace() {
               <LibraryScreen
                 profile={profile}
                 profiles={profiles}
-                game={game}
+                game={guardedGame}
                 switching={switching}
                 fileOps={fileOps}
                 updates={updates}

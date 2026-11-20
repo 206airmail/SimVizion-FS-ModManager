@@ -477,6 +477,7 @@ export function LibraryScreen({
           profiles={profiles}
           game={game}
           fileOps={fileOps}
+          updateChecking={updates.checking}
           meta={meta}
           overlay={narrow}
           onClose={closeInspector}

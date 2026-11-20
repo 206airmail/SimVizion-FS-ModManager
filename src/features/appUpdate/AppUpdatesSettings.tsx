@@ -5,6 +5,7 @@ import { strings } from '../../strings';
 import { Button } from '../../ui/Button';
 import { Banner } from '../../ui/Feedback';
 import { Switch } from '../../ui/Switch';
+import { appUpdateControlsLocked } from './state';
 import type { AppUpdatesController } from './useAppUpdates';
 
 const t = strings.appUpdates.settings;
@@ -17,6 +18,8 @@ export function AppUpdatesSettings({ appUpdates }: { appUpdates: AppUpdatesContr
   const headingId = useId();
   const { settings, checking, found, upToDate, failure } = appUpdates;
   const enabled = settings?.enabled === true;
+  // An install ends the app: turning the switch off or checking again meanwhile makes no sense.
+  const locked = appUpdateControlsLocked(checking, appUpdates.install);
 
   return (
     <div className="mm-settings__group" role="group" aria-labelledby={headingId}>
@@ -25,7 +28,7 @@ export function AppUpdatesSettings({ appUpdates }: { appUpdates: AppUpdatesContr
       </h4>
       <Switch
         checked={enabled}
-        disabled={settings === null || checking}
+        disabled={settings === null || locked}
         onChange={appUpdates.setEnabled}
       >
         {t.switchLabel}
@@ -67,7 +70,7 @@ export function AppUpdatesSettings({ appUpdates }: { appUpdates: AppUpdatesContr
               )}
             </dl>
             <div className="mm-settings__actions">
-              <Button icon={RefreshCw} disabled={checking} onClick={appUpdates.checkNow}>
+              <Button icon={RefreshCw} disabled={locked} onClick={appUpdates.checkNow}>
                 {checking ? t.checking : t.checkNow}
               </Button>
             </div>

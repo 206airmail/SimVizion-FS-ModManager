@@ -240,7 +240,10 @@ export function TransferDialog({ preset, profiles, onClose, onConfirm }: Transfe
               {t.back}
             </Button>
           )}
-          {cancel}
+          {/* The first control in the body is "Replace all": Enter must not start a replacement. */}
+          <Button data-autofocus onClick={onClose} disabled={checking}>
+            {strings.fileOps.cancel}
+          </Button>
           <Button
             variant="primary"
             disabled={needsSpace || count === 0}

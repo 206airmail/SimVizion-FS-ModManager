@@ -4,8 +4,8 @@ import { strings } from '../../strings';
 import { Button } from '../../ui/Button';
 import { Dialog } from '../../ui/Dialog';
 import { Banner } from '../../ui/Feedback';
-import { fileOpBlockedReason } from '../files/blocked';
 import { ReasonButton } from '../files/ReasonButton';
+import { updateBlockedReason } from './blocked';
 
 /** How many mods the confirmation lists before "and N more". */
 const SHOWN = 6;
@@ -17,6 +17,8 @@ export interface UpdateManyDialogProps {
   mods: readonly ModEntry[];
   game: GameStatus | null;
   operationRunning: boolean;
+  /** A check for mod updates is running. */
+  updateChecking: boolean;
   onClose: () => void;
   onConfirm: () => void;
 }
@@ -30,10 +32,11 @@ export function UpdateManyDialog({
   mods,
   game,
   operationRunning,
+  updateChecking,
   onClose,
   onConfirm,
 }: UpdateManyDialogProps) {
-  const blocked = fileOpBlockedReason(game, operationRunning);
+  const blocked = updateBlockedReason(game, operationRunning, updateChecking);
   const shown = mods.slice(0, SHOWN);
   return (
     <Dialog
