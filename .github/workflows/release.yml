@@ -76,3 +76,16 @@ jobs:
           updaterJsonPreferNsis: true
           uploadUpdaterJson: true
           args: -- --locked
+
+      # tauri-action points latest.json at the GitHub REST API while the release is a draft; after
+      # publishing, the public download link serves the same file without the API's rate limit.
+      - name: Point latest.json at the public download links
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p release-fix
+          gh release download "$GITHUB_REF_NAME" -p latest.json -D release-fix
+          gh release view "$GITHUB_REF_NAME" --json assets > release-fix/assets.json
+          node scripts/latest-json-public-urls.mjs release-fix/latest.json release-fix/assets.json "$GITHUB_REPOSITORY" "$GITHUB_REF_NAME"
+          gh release upload "$GITHUB_REF_NAME" release-fix/latest.json --clobber
