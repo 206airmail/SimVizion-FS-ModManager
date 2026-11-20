@@ -15,6 +15,7 @@
 //! never attempted because an earlier one stopped the operation, have no row. A journal failure
 //! never hides the outcome of the file work.
 
+use std::cell::Cell;
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::io;
@@ -213,6 +214,17 @@ fn volume_of(path: &Path) -> String {
     }
 }
 
+/// Whether both folders are on one volume, judged from where they really are: junctions,
+/// symlinks and mapped drives are resolved first, so a folder that only looks like it is on the
+/// same drive does not count. A folder that cannot be resolved is not on the same volume (the
+/// safe answer: the move is planned as a copy).
+fn same_volume(a: &Path, b: &Path) -> bool {
+    match (fs::canonicalize(a), fs::canonicalize(b)) {
+        (Ok(a), Ok(b)) => volume_of(&a) == volume_of(&b),
+        _ => false,
+    }
+}
+
 /// The size and newest mtime `scan::enumerate` would record for this mod now, or `None` if it is
 /// gone or unreadable.
 fn current_stamp(path: &Path) -> Option<FileStamp> {
@@ -243,6 +255,7 @@ fn file_op_code(e: &FileOpError) -> ErrorCode {
         FileOpError::Cancelled => ErrorCode::Cancelled,
         FileOpError::Exists => ErrorCode::TargetChanged,
         FileOpError::Verify(_) | FileOpError::Io(_) => ErrorCode::WriteFailed,
+        FileOpError::ReplaceIncomplete(_) => ErrorCode::ReplaceIncomplete,
         FileOpError::Recycle(r) => recycle_code(r),
     }
 }
@@ -251,7 +264,10 @@ fn file_op_code(e: &FileOpError) -> ErrorCode {
 pub(super) fn stops_operation(code: ErrorCode) -> bool {
     matches!(
         code,
-        ErrorCode::Cancelled | ErrorCode::GameRunning | ErrorCode::ServerRunning
+        ErrorCode::Cancelled
+            | ErrorCode::GameRunning
+            | ErrorCode::ServerRunning
+            | ErrorCode::RunningUnknown
     )
 }
 
@@ -359,8 +375,7 @@ impl Library {
             });
         }
 
-        let renames_only =
-            mode == TransferMode::Move && volume_of(&from.path) == volume_of(&to.path);
+        let renames_only = mode == TransferMode::Move && same_volume(&from.path, &to.path);
         let total_bytes = if renames_only {
             0
         } else {
@@ -468,8 +483,13 @@ impl Library {
                 continue;
             }
             tracker.begin(&item.file_name);
-            let target = plan.to_dir.join(&item.file_name);
-            let outcome = self.transfer_item(&plan, plan_id, item, env, &mut tracker);
+            let mut target = plan.to_dir.join(&item.file_name);
+            let mut kept = None;
+            let outcome = self.transfer_item(&plan, plan_id, item, env, &mut tracker, &mut kept);
+            // A replacement that was kept under its staged name is journaled under that name.
+            if let Some(path) = kept {
+                target = path;
+            }
             self.journal_file_op(
                 kind,
                 Some(plan_id),
@@ -503,7 +523,10 @@ impl Library {
     }
 
     /// One item of a transfer: guards, the source and existing-mod checks, the recycle for a
-    /// replace, then the copy or move.
+    /// replace, then the copy or move. Just before the existing mod is recycled, and before a move
+    /// across drives disposes of its source, the game, the cancel flag and the folder are looked at
+    /// again: a copy can take minutes. When the replacement could not be given its name, the kept
+    /// file's path is left in `kept`.
     fn transfer_item(
         &self,
         plan: &Plan,
@@ -511,6 +534,7 @@ impl Library {
         item: &PlanItem,
         env: &OpEnv<'_>,
         tracker: &mut Tracker<'_>,
+        kept: &mut Option<PathBuf>,
     ) -> Result<(), ErrorCode> {
         running_code(env)?;
         if !unchanged(&item.src, item.stamp) {
@@ -518,67 +542,96 @@ impl Library {
         }
         let cancel = &self.transfer.cancel;
         let mut on_bytes = |n| tracker.add_bytes(n);
-        let Some(existing) = &item.existing else {
-            return match plan.mode {
+        // Why a last look said no, when it is not one of the file errors.
+        let refused: Cell<Option<ErrorCode>> = Cell::new(None);
+        let refuse = |code: ErrorCode| {
+            refused.set(Some(code));
+            FileOpError::Io("Guard".to_string())
+        };
+        // Across drives the source goes to the bin once its copy is in place.
+        let mut before_dispose = || running_code(env).map_err(refuse);
+        let outcome = match &item.existing {
+            None => match plan.mode {
                 TransferMode::Copy => {
                     files::copy_staged(&item.src, &plan.to_dir, &mut on_bytes, cancel)
                 }
-                TransferMode::Move => {
-                    files::move_item(&item.src, &plan.to_dir, &mut on_bytes, cancel, env.recycler)
+                TransferMode::Move => files::move_item_guarded(
+                    &item.src,
+                    &plan.to_dir,
+                    &mut on_bytes,
+                    cancel,
+                    env.recycler,
+                    &mut before_dispose,
+                ),
+            }
+            .map(|_| ()),
+            Some(existing) => {
+                let mut recycle_existing = || {
+                    running_code(env).map_err(refuse)?;
+                    if cancel.load(Ordering::SeqCst) {
+                        return Err(FileOpError::Cancelled);
+                    }
+                    if !unchanged(&existing.path, existing.stamp) {
+                        return Err(refuse(ErrorCode::TargetChanged));
+                    }
+                    let recycled = env.recycler.recycle(&existing.path);
+                    self.journal_file_op(
+                        "recycle",
+                        Some(plan_id),
+                        &existing.path,
+                        None,
+                        &recycled
+                            .as_ref()
+                            .map_or_else(|e| code_name(recycle_code(e)), |_| "ok".to_string()),
+                    );
+                    recycled.map_err(FileOpError::Recycle)
+                };
+                // The mod being replaced goes to the Recycle Bin only once its replacement is
+                // copied and verified, so a cancelled or failed copy leaves it in place. A move on
+                // one volume is an instant rename, so there the old mod can go first.
+                match plan.mode {
+                    TransferMode::Move if plan.renames_only => recycle_existing().and_then(|()| {
+                        files::move_item(
+                            &item.src,
+                            &plan.to_dir,
+                            &mut on_bytes,
+                            cancel,
+                            env.recycler,
+                        )
+                        .map(|_| ())
+                    }),
+                    TransferMode::Copy => files::copy_staged_replacing(
+                        &item.src,
+                        &plan.to_dir,
+                        &mut on_bytes,
+                        cancel,
+                        &mut recycle_existing,
+                    )
+                    .map(|_| ()),
+                    // Across drives: as `files::move_item` does, the source goes to the bin once
+                    // its copy is in place.
+                    TransferMode::Move => files::copy_staged_replacing(
+                        &item.src,
+                        &plan.to_dir,
+                        &mut on_bytes,
+                        cancel,
+                        &mut recycle_existing,
+                    )
+                    .and_then(|_| {
+                        before_dispose()?;
+                        env.recycler
+                            .recycle(&item.src)
+                            .map_err(FileOpError::Recycle)
+                    }),
                 }
             }
-            .map(|_| ())
-            .map_err(|e| file_op_code(&e));
         };
-
-        if !unchanged(&existing.path, existing.stamp) {
-            return Err(ErrorCode::TargetChanged);
-        }
-        let mut recycle_existing = || {
-            let recycled = env.recycler.recycle(&existing.path);
-            self.journal_file_op(
-                "recycle",
-                Some(plan_id),
-                &existing.path,
-                None,
-                &recycled
-                    .as_ref()
-                    .map_or_else(|e| code_name(recycle_code(e)), |_| "ok".to_string()),
-            );
-            recycled.map_err(FileOpError::Recycle)
-        };
-        // The mod being replaced goes to the Recycle Bin only once its replacement is copied and
-        // verified, so a cancelled or failed copy leaves it in place. A move on one volume is an
-        // instant rename, so there the old mod can go first.
-        match plan.mode {
-            TransferMode::Move if plan.renames_only => recycle_existing().and_then(|()| {
-                files::move_item(&item.src, &plan.to_dir, &mut on_bytes, cancel, env.recycler)
-                    .map(|_| ())
-            }),
-            TransferMode::Copy => files::copy_staged_replacing(
-                &item.src,
-                &plan.to_dir,
-                &mut on_bytes,
-                cancel,
-                &mut recycle_existing,
-            )
-            .map(|_| ()),
-            // Across drives: as `files::move_item` does, the source goes to the bin once its copy
-            // is in place.
-            TransferMode::Move => files::copy_staged_replacing(
-                &item.src,
-                &plan.to_dir,
-                &mut on_bytes,
-                cancel,
-                &mut recycle_existing,
-            )
-            .and_then(|_| {
-                env.recycler
-                    .recycle(&item.src)
-                    .map_err(FileOpError::Recycle)
-            }),
-        }
-        .map_err(|e| file_op_code(&e))
+        outcome.map_err(|e| {
+            if let FileOpError::ReplaceIncomplete(name) = &e {
+                *kept = Some(plan.to_dir.join(name));
+            }
+            refused.take().unwrap_or_else(|| file_op_code(&e))
+        })
     }
 
     /// Sends mods of a profile to the Recycle Bin, item by item.

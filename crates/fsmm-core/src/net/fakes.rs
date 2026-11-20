@@ -206,6 +206,8 @@ pub struct FakeWeb {
     cancel_after_chunks: Mutex<Option<usize>>,
     /// The download fails with this error after the first chunk (a dropped connection).
     fail_mid_download: Mutex<Option<NetError>>,
+    /// The `max_bytes` each download was started with.
+    ceilings: Mutex<Vec<u64>>,
 }
 
 impl Default for FakeWeb {
@@ -219,6 +221,7 @@ impl Default for FakeWeb {
             chunk: 1024,
             cancel_after_chunks: Mutex::default(),
             fail_mid_download: Mutex::default(),
+            ceilings: Mutex::default(),
         }
     }
 }
@@ -272,6 +275,11 @@ impl FakeWeb {
             .collect()
     }
 
+    /// The byte ceiling each download was asked to stay under.
+    pub fn download_ceilings(&self) -> Vec<u64> {
+        lock(&self.ceilings).clone()
+    }
+
     pub fn download_referers(&self) -> Vec<Option<String>> {
         lock(&self.referers).clone()
     }
@@ -303,12 +311,14 @@ impl Web for FakeWeb {
         &self,
         url: &str,
         referer: Option<&str>,
+        max_bytes: u64,
         sink: &mut dyn Write,
         progress: &mut dyn FnMut(u64),
         cancel: &AtomicBool,
     ) -> Result<u64, NetError> {
         lock(&self.calls).push(WebCall::Download(url.to_string()));
         lock(&self.referers).push(referer.map(str::to_string));
+        lock(&self.ceilings).push(max_bytes);
         if let Some(error) = lock(&self.errors).pop_front() {
             return Err(error);
         }
@@ -327,6 +337,9 @@ impl Web for FakeWeb {
                 if let Some(error) = &fail_after_first {
                     return Err(error.clone());
                 }
+            }
+            if written + chunk.len() as u64 > max_bytes {
+                return Err(NetError::TooLarge);
             }
             sink.write_all(chunk)
                 .map_err(|_| NetError::BadAnswer("sinkWrite".to_string()))?;
