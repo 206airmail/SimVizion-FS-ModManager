@@ -33,13 +33,22 @@ Milestone 8 (public beta) is built, reviewed and verified, and is waiting for th
 
 ## Next step
 
-1. The user reviews and merges the M8 pull request.
-2. With approval at each step:
-   - rewrite the 7 merge commits that carry the account email;
-   - force-push `main` and delete the merged branches;
-   - make the repo public and turn on private vulnerability reporting;
-   - tag `v0.9.0-beta.1`.
-3. Review the CI draft release, then publish.
+Done on 2026-11-19, with the user's approval:
+
+- PR #8 merged.
+- The 7 merge commits that carried the account email rewritten to the no-reply address (same trees, same 83 commits), `main` force-pushed, merged branches deleted.
+- Repo made public, with private vulnerability reporting on.
+- Tag `v0.9.0-beta.1` pushed.
+
+The release workflow built and signed the draft. Its first run failed on a wrong key-password secret, which the user fixed. The update signature verifies against the key in `tauri.conf.json`.
+
+`latest.json` pointed at `api.github.com` asset addresses, as tauri-action does for drafts. It was rewritten to the public download link with `scripts/latest-json-public-urls.mjs`, and `release.yml` now does this itself (PR #9).
+
+Remaining:
+
+1. The user publishes the draft release.
+2. Merge PR #9.
+3. Plan the next milestone.
 
 ## Last verification
 
